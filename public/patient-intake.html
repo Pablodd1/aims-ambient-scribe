@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Patient Intake</title>
+<style>
+:root{--bg:#f8f9fa;--card:#fff;--border:#dee2e6;--accent:#2563eb;--text:#1a1a2e;--sub:#6b7280;--danger:#dc2626}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min-height:100vh;display:flex;justify-content:center;padding:16px}
+.container{max-width:600px;width:100%}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+h1{font-size:18px;margin-bottom:4px;color:var(--accent)}
+h2{font-size:13px;color:var(--sub);font-weight:400;margin-bottom:16px}
+.q-item{padding:12px 0;border-bottom:1px solid var(--border)}
+.q-item:last-child{border:none}
+.q-text{font-size:14px;font-weight:600;margin-bottom:4px}
+.q-hint{font-size:11px;color:var(--sub);margin-bottom:8px}
+.q-answer{font-size:12px;color:var(--accent);min-height:18px}
+.q-answer:empty::after{content:'—';color:var(--sub)}
+
+.record-area{text-align:center;padding:24px 0}
+.record-btn{width:80px;height:80px;border-radius:50%;border:3px solid var(--accent);background:var(--card);cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:28px}
+.record-btn.recording{background:var(--danger);border-color:var(--danger);color:#fff;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+.record-hint{font-size:13px;color:var(--sub)}
+.transcript-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;line-height:1.5;margin-top:12px;max-height:120px;overflow-y:auto;white-space:pre-wrap}
+.btn{width:100%;padding:14px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px}
+.btn-p{background:var(--accent);color:#fff}
+.btn-s{background:var(--border);color:var(--text)}
+.btn:disabled{opacity:.5}
+.success{text-align:center;padding:40px 0}
+.success .icon{font-size:48px;margin-bottom:12px}
+.success h2{color:var(--accent);font-size:20px}
+.loading{text-align:center;padding:24px;color:var(--sub)}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="container" id="app">
+  <div class="loading"><div class="spinner"></div>Loading intake form...</div>
+</div>
+
+<script>
+const token = window.location.pathname.split('/').pop();
+let questions = [], patientName = '', mediaRecorder = null, audioChunks = [], isRecording = false;
+
+(async () => {
+  try {
+    const r = await fetch('/api/intake/link/' + token);
+    const d = await r.json();
+    if (!d.success) { document.getElementById('app').innerHTML = '<div class="card" style="text-align:center;padding:40px"><h1 style="color:var(--danger)">Link Expired</h1><p style="color:var(--sub)">This intake link is no longer valid.</p></div>'; return; }
+    if (d.status === 'completed') { showCompleted(d.answers); return; }
+    questions = d.questions; patientName = d.patient_name;
+    renderIntake();
+  } catch(e) { document.getElementById('app').innerHTML = '<div class="card" style="text-align:center;padding:40px"><h1 style="color:var(--danger)">Error</h1><p>Could not load intake form.</p></div>'; }
+})();
+
+function renderIntake() {
+  document.getElementById('app').innerHTML = `
+    <div class="card">
+      <h1>Patient Intake</h1>
+      <h2>Welcome, ${patientName}. Please answer the questions below by recording a voice message or typing.</h2>
+      ${questions.map(q => `
+        <div class="q-item">
+          <div class="q-text">${q.q}</div>
+          <div class="q-hint">${q.hint}</div>
+          <div class="q-answer" id="a-${q.id}"></div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="card">
+      <div class="record-area">
+        <button class="record-btn" id="recBtn" onclick="toggleRecord()">🎤</button>
+        <div class="record-hint" id="recHint">Tap to record your answers<br><span style="font-size:10px">Speak freely — we'll organize your answers</span></div>
+      </div>
+      <div class="transcript-box" id="transcript" style="display:none"></div>
+      <button class="btn btn-p" id="submitBtn" onclick="submitAudio()" disabled>Submit & Generate Summary</button>
+    </div>`;
+}
+
+async function toggleRecord() {
+  if (isRecording) { stopRecord(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = () => { stream.getTracks().forEach(t => t.stop()); document.getElementById('submitBtn').disabled = false; };
+    mediaRecorder.start();
+    isRecording = true;
+    document.getElementById('recBtn').textContent = '⏹';
+    document.getElementById('recBtn').classList.add('recording');
+    document.getElementById('recHint').innerHTML = 'Recording... speak freely<br><span style="font-size:10px">Answer all questions naturally</span>';
+    document.getElementById('transcript').style.display = 'block';
+    document.getElementById('transcript').textContent = '';
+    startSTT(); // Live transcription
+  } catch(e) { alert('Microphone access denied. Please allow microphone permissions.'); }
+}
+
+function startSTT() {
+  if (!('webkitSpeechRecognition' in window)) return;
+  const SR = webkitSpeechRecognition;
+  const r = new SR(); r.continuous = true; r.interimResults = true; r.lang = 'en-US';
+  r.onresult = e => {
+    let t = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) t += e.results[i][0].transcript + ' ';
+    document.getElementById('transcript').textContent = t;
+  };
+  r.start();
+  window._stt = r;
+}
+
+function stopRecord() {
+  isRecording = false;
+  if (mediaRecorder) { mediaRecorder.stop(); mediaRecorder = null; }
+  if (window._stt) { window._stt.stop(); window._stt = null; }
+  document.getElementById('recBtn').textContent = '🎤';
+  document.getElementById('recBtn').classList.remove('recording');
+  document.getElementById('recHint').textContent = 'Recording stopped. Submit when ready.';
+}
+
+async function submitAudio() {
+  if (isRecording) stopRecord();
+  const btn = document.getElementById('submitBtn'); btn.disabled = true; btn.textContent = 'Processing...';
+  
+  const form = new FormData();
+  form.append('token', token);
+  if (audioChunks.length) {
+    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+    form.append('audio', blob, 'intake.webm');
+  }
+  const transcriptText = document.getElementById('transcript')?.textContent || '';
+  if (transcriptText) form.append('transcript', transcriptText);
+
+  try {
+    const r = await fetch('/api/intake/voice-submit', { method: 'POST', body: form });
+    const d = await r.json();
+    if (d.success) showCompleted(d.answers, d.summary);
+    else { btn.disabled = false; btn.textContent = 'Submit'; alert('Failed: ' + (d.error || 'Try again')); }
+  } catch(e) { btn.disabled = false; btn.textContent = 'Submit'; }
+}
+
+function showCompleted(answers, summary) {
+  document.getElementById('app').innerHTML = `
+    <div class="card">
+      <div class="success">
+        <div class="icon">✅</div>
+        <h2>Thank you, ${patientName}!</h2>
+        <p style="color:var(--sub);margin-top:4px">Your intake has been submitted.</p>
+      </div>
+      ${questions.map(q => `
+        <div class="q-item">
+          <div class="q-text">${q.q}</div>
+          <div class="q-answer">${answers?.[q.id] || '—'}</div>
+        </div>
+      `).join('')}
+      ${summary ? `<div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:8px"><strong style="font-size:12px">Summary:</strong><p style="font-size:12px;margin-top:4px;line-height:1.5">${summary}</p></div>` : ''}
+    </div>`;
+}
+</script>
+</body>
+</html>

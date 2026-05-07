@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIMS EHR</title>
+<style>
+:root{--bg:#050510;--card:#0a0a1a;--border:#181830;--accent:#4ade80;--accent2:#60a5fa;--accent3:#a78bfa;--text:#e2e2ea;--sub:#6b6b80;--danger:#f87171;--warn:#fbbf24;--gold:#c9a84c;--radius:10px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;height:100vh;display:flex;overflow:hidden;font-size:13px;letter-spacing:-0.01em}
+
+.sidebar{width:200px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 0;flex-shrink:0;gap:2px}
+.sidebar .brand{padding:0 20px 20px;font-size:18px;font-weight:800;color:var(--accent);letter-spacing:-0.02em}
+.sidebar .brand span{display:block;font-size:9px;color:var(--sub);font-weight:400;letter-spacing:0.1em;text-transform:uppercase}
+.nav-item{padding:11px 20px;font-size:12px;color:var(--sub);cursor:pointer;display:flex;align-items:center;gap:10px;transition:all .15s;border-left:3px solid transparent;font-weight:500}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,.02)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(74,222,128,.04)}
+.nav-item .icon{font-size:15px;width:20px;text-align:center}
+.nav-divider{height:1px;background:var(--border);margin:8px 16px}
+
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.page{display:none;flex:1;overflow-y:auto;padding:24px 28px;gap:20px}
+.page.active{display:flex;flex-direction:column}
+
+h1{font-size:20px;font-weight:700;letter-spacing:-0.02em}
+h2{font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:14px}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-shrink:0}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;flex-shrink:0}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;transition:border-color .2s}
+.stat-card:hover{border-color:var(--accent)}
+.stat-card .num{font-size:28px;font-weight:800;color:var(--accent);letter-spacing:-0.02em}
+.stat-card .label{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+
+.btn{padding:9px 16px;border-radius:7px;border:none;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;letter-spacing:-0.01em;display:inline-flex;align-items:center;gap:6px}
+.btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-p{background:var(--accent);color:#000}
+.btn-b{background:var(--accent2);color:#000}
+.btn-v{background:var(--accent3);color:#000}
+.btn-g{background:var(--border);color:var(--sub)}
+.btn-s{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+
+input,textarea,select{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-size:12px;outline:none;font-family:inherit;transition:border-color .15s;width:100%}
+input:focus,textarea:focus,select:focus{border-color:var(--accent)}
+textarea{resize:vertical;line-height:1.5}
+
+.appt-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px}
+.appt-row:last-child{border:none}
+.appt-row .time{color:var(--accent);font-weight:700;min-width:55px;font-size:13px}
+.appt-row .name{flex:1;font-weight:500}
+.appt-row .reason{color:var(--sub);font-size:11px}
+.appt-row .badge{font-size:9px;padding:3px 10px;border-radius:12px;background:var(--border);color:var(--sub);font-weight:600}
+.appt-row .badge.ok{background:rgba(74,222,128,.1);color:var(--accent)}
+
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;flex:1}
+.cal-day{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);min-height:110px;padding:8px;font-size:10px;transition:border-color .15s}
+.cal-day:hover{border-color:var(--accent2)}
+.cal-day.today{border-color:var(--accent);background:rgba(74,222,128,.02)}
+.cal-day .day-num{font-size:18px;font-weight:700;margin-bottom:6px}
+.cal-day .day-label{font-size:9px;color:var(--sub);text-transform:uppercase}
+.cal-appt{background:var(--accent);color:#000;padding:3px 7px;border-radius:4px;font-size:9px;margin:2px 0;cursor:grab;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-appt.cancelled{background:var(--border);color:var(--sub);text-decoration:line-through}
+.cal-appt.completed{background:var(--accent2);color:#000}
+
+.patient-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.patient-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;cursor:pointer;transition:all .15s}
+.patient-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.patient-card .name{font-size:14px;font-weight:600;color:var(--accent)}
+.patient-card .info{font-size:11px;color:var(--sub);margin-top:4px}
+
+.consult-grid{display:grid;grid-template-columns:1fr 360px;gap:16px;flex:1;min-height:0}
+.soap-col{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding-right:4px}
+.soap-box{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.soap-box .label{font-size:9px;color:var(--sub);text-transform:uppercase;letter-spacing:.1em;font-weight:700;padding:10px 14px 0}
+.soap-box textarea{width:100%;border:none;background:transparent;color:var(--text);font-size:12px;line-height:1.6;padding:6px 14px 12px;resize:none;outline:none;min-height:70px;font-family:inherit}
+.soap-box textarea:focus{background:rgba(74,222,128,.015)}
+
+.side-col{display:flex;flex-direction:column;gap:10px;overflow-y:auto}
+.rec-btn{width:100%;padding:12px;border-radius:25px;border:none;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;background:var(--border);color:var(--sub)}
+.rec-btn.on{background:var(--danger);color:#fff;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+.live-text{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:10px;line-height:1.5;max-height:100px;overflow-y:auto;white-space:pre-wrap;color:var(--sub)}
+.row-btns{display:flex;gap:6px}
+.row-btns>*{flex:1}
+
+.rag-box{background:var(--bg);border:1px solid var(--accent3);border-radius:var(--radius);padding:10px;max-height:200px;overflow-y:auto}
+.rag-item{font-size:10px;padding:4px 0;border-bottom:1px solid var(--border)}
+.rag-item:last-child{border:none}
+.rag-item .cat{color:var(--accent3);font-weight:600;font-size:9px;text-transform:uppercase}
+.rag-item .score{color:var(--sub);font-size:8px}
+
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;justify-content:center;align-items:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;width:480px;max-height:90vh;display:flex;flex-direction:column;gap:12px;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal h3{font-size:16px;font-weight:700;color:var(--accent)}
+.modal p{font-size:11px;color:var(--sub)}
+.modal .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+.intake-q{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px;transition:border-color .15s}
+.intake-q.active{border-color:var(--accent)}
+.intake-q .q-text{font-size:13px;font-weight:600;margin-bottom:6px}
+.intake-q .q-hint{font-size:10px;color:var(--sub);margin-bottom:8px}
+.intake-q input{font-size:12px}
+.intake-progress{display:flex;gap:4px;margin-bottom:12px}
+.intake-dot{flex:1;height:3px;background:var(--border);border-radius:2px;transition:background .2s}
+.intake-dot.done{background:var(--accent)}
+
+.toast{position:fixed;bottom:24px;right:24px;background:var(--accent);color:#000;padding:12px 22px;border-radius:10px;font-size:12px;font-weight:700;z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.show{opacity:1}
+
+@media(max-width:900px){.consult-grid{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(2,1fr)}.calendar{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="brand">AIMS<span>EHR Platform</span></div>
+  <div class="nav-item active" onclick="navTo('dashboard')"><span class="icon">📊</span>Dashboard</div>
+  <div class="nav-item" onclick="navTo('schedule')"><span class="icon">📅</span>Schedule</div>
+  <div class="nav-item" onclick="navTo('patients')"><span class="icon">👥</span>Patients</div>
+  <div class="nav-divider"></div>
+  <div class="nav-item" onclick="navTo('intake')"><span class="icon">📋</span>Patient Intake</div>
+  <div class="nav-item" onclick="navTo('consult')"><span class="icon">🎤</span>Consult Room</div>
+</div>
+
+<div class="main" id="mainContent"></div>
+<div class="toast" id="toast"></div>
+
+<!-- Intake Modal -->
+<div class="modal-overlay" id="intakeModal">
+  <div class="modal"><h3>📋 Patient Intake</h3><p id="intakePatient">No patient selected</p>
+    <div class="intake-progress" id="intakeProgress"></div>
+    <div id="intakeQuestions"></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center">
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-g" id="intakePrev" disabled onclick="intakePrev()">← Back</button>
+        <button class="btn btn-p" id="intakeNext" onclick="intakeNext()">Next →</button>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-s" id="intakeVoice" onclick="intakeVoice()">🎤 Answer</button>
+        <button class="btn btn-p" id="intakeSubmit" style="display:none" onclick="intakeSubmitAll()">✓ Submit All</button>
+      </div>
+    </div>
+    <button class="btn btn-g" onclick="closeIntake()" style="width:100%">Close</button>
+  </div>
+</div>
+
+<script>
+// ═══════ GLOBAL STATE ═══════
+let sessionId=null,isRecording=false,recognition=null,pollTimer=null,heartbeatTimer=null,selectedPatient=null;
+let intakeAnswers={},intakeIdx=0,intakeQuestions=[],scheduleData=[];
+
+// ═══════ NAV ═══════
+function navTo(page){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>{if(n.textContent.toLowerCase().includes(page.replace('-',' ')))n.classList.add('active')});
+  document.getElementById('mainContent').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:200px"><div style="text-align:center;color:var(--sub)"><div style="width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px"></div>Loading...</div></div>';
+  if(page==='dashboard')loadDashboard();
+  else if(page==='schedule')loadSchedule();
+  else if(page==='patients')loadPatients();
+  else if(page==='intake')loadIntakePage();
+  else if(page==='consult')loadConsult();
+}
+
+// ═══════ DASHBOARD ═══════
+async function loadDashboard(){
+  const r=await fetch('/api/dashboard');const d=await r.json();
+  document.getElementById('mainContent').innerHTML=`
+    <div class="page active">
+      <div class="page-header"><h1>Dashboard</h1><div style="display:flex;gap:6px"><button class="btn btn-p" onclick="openModal('apptModal')">+ Appointment</button><button class="btn btn-b" onclick="openModal('regModal')">+ Patient</button></div></div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="num">${d.stats.patients}</div><div class="label">Patients</div></div>
+        <div class="stat-card"><div class="num">${d.stats.todayAppointments}</div><div class="label">Today</div></div>
+        <div class="stat-card"><div class="num">${d.stats.totalAppointments}</div><div class="label">Appointments</div></div>
+        <div class="stat-card"><div class="num">${d.stats.totalNotes}</div><div class="label">Notes</div></div>
+      </div>
+      <div class="card"><h2>Today's Schedule</h2>
+        ${d.todayAppointments?.length?d.todayAppointments.map(a=>`<div class="appt-row" style="cursor:pointer" onclick="openConsultForPatient(${a.id||0},'${a.patient||'Walk-in'}')"><span class="time">${a.time||'--:--'}</span><span class="name">${a.patient||'Walk-in'}</span><span class="reason">${a.reason||''}</span><span class="badge ok">${a.status||'scheduled'}</span></div>`).join(''):'<div style="font-size:12px;color:var(--sub);padding:12px 0">No appointments today</div>'}
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-p" onclick="navTo('consult')">Start Consult</button><button class="btn btn-b" onclick="navTo('intake')">Patient Intake</button><button class="btn btn-g" onclick="navTo('schedule')">View Schedule</button></div>
+      </div>
+    </div>`;
+}
+
+// ═══════ SCHEDULE (DRAG & DROP + TIME + SEARCH) ═══════
+async function loadSchedule(){
+  const today=new Date();const start=new Date(today);start.setDate(today.getDate()-today.getDay());
+  const r=await fetch('/api/schedule?week='+start.toISOString().slice(0,10));const d=await r.json();scheduleData=d.appointments;
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html=`<div class="page active"><div class="page-header"><h1>Schedule</h1><div style="display:flex;gap:6px;align-items:center"><input placeholder="Search patients..." style="width:180px;font-size:11px" id="schedSearch" oninput="filterSchedule()"><button class="btn btn-g" onclick="loadSchedule()">This Week</button><button class="btn btn-p" onclick="openModal('apptModal')">+ New</button></div></div><div class="calendar" id="calendarGrid">`;
+  for(let i=0;i<7;i++){const d2=new Date(start);d2.setDate(start.getDate()+i);const ds=d2.toISOString().slice(0,10);const isToday=ds===today.toISOString().slice(0,10);const dayApps=scheduleData.filter(a=>a.date===ds);
+    html+=`<div class="cal-day${isToday?' today':''}" ondragover="event.preventDefault()" ondrop="dropAppt(event,'${ds}')"><div class="day-label">${days[d2.getDay()]}</div><div class="day-num">${d2.getDate()}</div>${dayApps.map(a=>`<div class="cal-appt ${a.status||''}" draggable="true" ondragstart="dragAppt(event,${a.id})" onclick="editAppt(${a.id},'${a.patient||''}','${a.time||''}','${ds}','${a.reason||''}','${a.status||''}')">${a.time||''} ${a.patient||'—'}</div>`).join('')}</div>`;}
+  html+=`</div></div>`;document.getElementById('mainContent').innerHTML=html;
+}
+function filterSchedule(){
+  const q=(document.getElementById('schedSearch')?.value||'').toLowerCase();
+  document.querySelectorAll('.cal-appt').forEach(el=>{el.style.display=el.textContent.toLowerCase().includes(q)?'block':'none'});
+}
+function dragAppt(e,id){e.dataTransfer.setData('text/plain',id)}
+async function dropAppt(e,date){
+  e.preventDefault();
+  const id=e.dataTransfer.getData('text/plain');
+  const a=scheduleData.find(a=>a.id===parseInt(id));
+  if(!a)return;
+  const time=a.time||'09:00';
+  await fetch(`/api/appointments/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({appointment_date:`${date}T${time}:00`})});
+  loadSchedule();toast('Moved to '+date);
+}
+function editAppt(id,name,time,date,reason,status){
+  closePopover();
+  const pop=document.createElement('div');pop.id='apptPopover';pop.style.cssText='position:fixed;z-index:300;background:var(--card);border:1px solid var(--accent);border-radius:10px;padding:16px;min-width:240px;box-shadow:0 12px 40px rgba(0,0,0,.6);font-size:12px';
+  const [h,m]=(time||'09:00').split(':');
+  pop.innerHTML=`
+    <div style="font-weight:700;color:var(--accent);margin-bottom:8px;font-size:13px">${name}</div>
+    <div style="color:var(--sub);font-size:10px;margin-bottom:12px">${date} — ${reason||'No reason'}<br>Status: ${status||'scheduled'}</div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
+      <input type="time" id="popTime" value="${h}:${m}" style="width:100px;font-size:12px">
+      <button class="btn btn-p" style="font-size:10px;padding:6px 10px;flex:1" onclick="updateApptTime(${id},'${date}')">Update Time</button>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-b" style="font-size:10px;padding:6px 10px;flex:1" onclick="completeAppt(${id})">✓ Complete</button>
+      <button class="btn btn-s" style="font-size:10px;padding:6px 10px;flex:1;color:var(--danger);border-color:var(--danger)" onclick="deleteAppt(${id})">✕ Delete</button>
+    </div>
+    <button class="btn btn-g" style="width:100%;margin-top:8px;font-size:10px" onclick="closePopover()">Cancel</button>`;
+  document.body.appendChild(pop);
+  // Position near click
+  const e=window.event||event;pop.style.left=Math.min(e.clientX-120,window.innerWidth-280)+'px';pop.style.top=(e.clientY-20)+'px';
+  setTimeout(()=>{const inp=document.getElementById('popTime');if(inp){inp.focus();inp.select()}},50);
+}
+function closePopover(){const p=document.getElementById('apptPopover');if(p)p.remove()}
+async function updateApptTime(id,date){
+  const t=document.getElementById('popTime').value;
+  if(!t)return;
+  await fetch(`/api/appointments/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({appointment_date:`${date}T${t}:00`})});
+  closePopover();loadSchedule();toast('Time: '+t);
+}
+async function completeAppt(id){
+  await fetch(`/api/appointments/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'completed'})});
+  closePopover();loadSchedule();toast('Completed');
+}
+async function deleteAppt(id){
+  await fetch(`/api/appointments/${id}`,{method:'DELETE'});
+  closePopover();loadSchedule();toast('Deleted');
+}
+function apptAction(id,name,time,reason){editAppt(id,name,time,'','','')}
+
+// ═══════ PATIENTS ═══════
+async function loadPatients(){
+  const r=await fetch('/api/patients');const d=await r.json();
+  document.getElementById('mainContent').innerHTML=`
+    <div class="page active">
+      <div class="page-header"><h1>Patients</h1><div style="display:flex;gap:6px"><input placeholder="Search..." style="width:200px" oninput="searchP(this.value)"><button class="btn btn-p" onclick="openModal('regModal')">+ Register</button></div></div>
+      <div class="patient-grid" id="patientGrid"></div>
+    </div>`;
+  renderPatients(d.patients);
+}
+async function searchP(q){const r=await fetch('/api/patients?search='+encodeURIComponent(q));renderPatients((await r.json()).patients)}
+function renderPatients(patients){
+  const grid=document.getElementById('patientGrid');if(!grid)return;
+  grid.innerHTML=patients.map(p=>{
+    const visitBadge = p.visit_count > 0 
+      ? `<span style="background:rgba(74,222,128,.1);color:var(--accent);font-size:9px;padding:2px 8px;border-radius:10px;font-weight:700">${p.visit_count} visit${p.visit_count!==1?'s':''}</span>`
+      : `<span style="background:var(--border);color:var(--sub);font-size:9px;padding:2px 8px;border-radius:10px">New</span>`;
+    const lastVisit = p.last_visit 
+      ? `<div class="info" style="margin-top:4px;color:var(--accent2)">Last: ${p.last_visit}${p.last_reason ? ` — ${p.last_reason}` : ''}</div>`
+      : '';
+    return `<div class="patient-card" onclick="openConsultForPatient(${p.id},'${p.first_name} ${p.last_name}')">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="name">${p.first_name} ${p.last_name}</div>
+        ${visitBadge}
+      </div>
+      <div class="info">DOB: ${p.date_of_birth?.split('T')[0]||'—'}${p.phone ? ` | ${p.phone}` : ''}</div>
+      ${lastVisit}
+    </div>`;
+  }).join('')||'<div style="color:var(--sub);padding:20px">No patients yet</div>';
+}
+function selectPatientForAll(id,name){selectedPatient={id,name};toast('Selected: '+name)}
+
+// ═══════ PATIENT INTAKE ═══════
+async function loadIntakePage(){
+  const r=await fetch('/api/intake/questions');const d=await r.json();intakeQuestions=d.questions;intakeAnswers={};intakeIdx=0;
+  document.getElementById('mainContent').innerHTML=`
+    <div class="page active">
+      <div class="page-header"><h1>Patient Intake</h1><div><span style="font-size:11px;color:var(--sub)">${selectedPatient?selectedPatient.name:'No patient selected'} — </span><button class="btn btn-s" onclick="selectPatientFromPatients()">Select Patient</button></div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:10px">
+        ${intakeQuestions.map((q,i)=>`
+          <div class="intake-q" id="intake-q-${i}">
+            <div class="q-text">${q.q}</div>
+            <div class="q-hint">${q.hint}</div>
+            <input placeholder="Type answer or use voice..." id="intake-a-${i}" onchange="intakeSave(${i})">
+            <button class="btn btn-s" style="margin-top:6px;font-size:10px;padding:4px 10px" onclick="intakeVoiceAnswer(${i})">🎤 Voice Answer</button>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-p" style="flex:1;padding:12px" onclick="submitIntake()">✓ Submit → Consult</button>
+        <button class="btn btn-b" style="flex:1;padding:12px" onclick="shareIntake()">📤 Share with Patient</button>
+        <button class="btn btn-g" onclick="navTo('consult')">Skip</button>
+      </div>
+    </div>`;
+  // Restore saved answers from localStorage
+  setTimeout(()=>{for(let i=0;i<intakeQuestions.length;i++){const saved=localStorage.getItem('aims-intake-'+i);if(saved){const el=document.getElementById('intake-a-'+i);if(el){el.value=saved;intakeAnswers[intakeQuestions[i].id]=saved;}}}},100);
+}
+function intakeSave(i){intakeAnswers[intakeQuestions[i].id]=document.getElementById('intake-a-'+i).value;try{localStorage.setItem('aims-intake-'+i,document.getElementById('intake-a-'+i).value)}catch(e){}}
+function intakeVoiceAnswer(i){
+  if(!('webkitSpeechRecognition'in window)){toast('Use Chrome');return}
+  const SR=webkitSpeechRecognition;const r=new SR();r.continuous=false;r.interimResults=false;r.lang='en-US';
+  document.getElementById('intake-a-'+i).placeholder='🎤 Listening...';toast('Speak now');
+  r.onresult=e=>{const t=e.results[0][0].transcript;document.getElementById('intake-a-'+i).value=t;intakeSave(i);toast('Captured!')};
+  r.start();
+}
+async function submitIntake(){
+  if(!sessionId){const r=await fetch('/api/scribe/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient:selectedPatient})});sessionId=(await r.json()).session_id}
+  for(let i=0;i<intakeQuestions.length;i++)intakeSave(i);
+  await fetch('/api/intake/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,answers:intakeAnswers})});
+  toast('Intake submitted!');navTo('consult');
+}
+async function shareIntake(){
+  const r=await fetch('/api/intake/create-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient_id:selectedPatient?.id,patient_name:selectedPatient?.name||'Patient'})});
+  const d=await r.json();
+  const msg=`📋 Patient Intake Link for ${d.patient_name}\n\n🔗 ${d.url}\n\nShare this link with the patient. They can answer by voice on their phone.`;
+  alert(msg);
+  // Try to copy to clipboard
+  try{navigator.clipboard.writeText(d.url);toast('Link copied!')}catch(e){}
+}
+function selectPatientFromPatients(){navTo('patients')}
+
+// ═══════ CONSULT ROOM ═══════
+async function loadConsult(){
+  if(!sessionId){const r=await fetch('/api/scribe/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient:selectedPatient})});sessionId=(await r.json()).session_id}
+  document.getElementById('mainContent').innerHTML=`
+    <div class="page active">
+      <div class="page-header"><h1>Consult Room</h1>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:11px;color:var(--sub)" id="consultPatientLabel">${selectedPatient?selectedPatient.name:'No patient'}</span>
+          <button class="btn btn-s" onclick="searchPatientForConsult()">👤 Find Patient</button>
+          <select id="consultType" style="width:auto;font-size:11px"><option>Initial Consultation</option><option>Follow-Up</option><option>Physical Exam</option><option>Urgent Care</option></select>
+          <button class="btn btn-s" onclick="voiceCommand()">🗣</button>
+        </div>
+      </div>
+      <div class="consult-grid">
+        <div class="soap-col">
+          <div class="soap-box"><div class="label">S — Subjective</div><textarea id="soap-s" placeholder="Subjective findings..." oninput="onSoapEdit('subjective')"></textarea></div>
+          <div class="soap-box"><div class="label">O — Objective</div><textarea id="soap-o" placeholder="Vitals & physical exam..." oninput="onSoapEdit('objective')"></textarea></div>
+          <div class="soap-box"><div class="label">A — Assessment</div><textarea id="soap-a" placeholder="Diagnoses with ICD-10 codes..." oninput="onSoapEdit('assessment')"></textarea></div>
+          <div class="soap-box"><div class="label">P — Plan</div><textarea id="soap-p" placeholder="Treatment plan, medications, follow-up..." oninput="onSoapEdit('plan')"></textarea></div>
+        </div>
+        <div class="side-col">
+          <button class="rec-btn" id="recordBtn" onclick="toggleMic()">🎤 Start Listening</button>
+          <div class="live-text" id="micTranscript"></div>
+          <textarea placeholder="Paste clinical text..." id="pasteText" style="min-height:50px;font-size:11px"></textarea>
+          <div class="row-btns">
+            <button class="btn btn-v" onclick="handlePaste()">📋 Paste</button>
+            <label class="btn btn-g" style="text-align:center;cursor:pointer">📁 Upload<input type="file" accept="audio/*" style="display:none" onchange="handleUpload(this.files[0])"></label>
+          </div>
+          <div class="row-btns">
+            <button class="btn btn-b" onclick="runReview('clinical')">🩺 Clinical</button>
+            <button class="btn btn-v" onclick="runReview('billing')">💰 Billing</button>
+          </div>
+          <div class="row-btns"><button class="btn btn-g" onclick="searchRAG()">🔬 RAG Search</button></div>
+          <div id="reviewResult" style="font-size:11px;color:var(--sub)"></div>
+          <div class="rag-box" id="ragResults" style="display:none"></div>
+          <div id="sigPanel" style="display:none">
+            <input placeholder="Doctor name" id="sigName" value="Dr. Sarah Johnson" style="margin-bottom:6px">
+            <input placeholder="License #" id="sigLicense" value="ME123456" style="margin-bottom:8px">
+            <div class="row-btns"><button class="btn btn-p" onclick="signNote()">✍️ Sign</button><button class="btn btn-b" id="downloadBtn" disabled onclick="downloadNote()">⬇ Download</button></div>
+          </div>
+          <div class="row-btns" style="margin-top:auto">
+            <button class="btn btn-p" onclick="finalize()">Finalize</button>
+            <button class="btn btn-g" onclick="resetConsult()">New</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  startPolling();
+  // Heartbeat every 2 min to keep session alive during long consultations
+  if(heartbeatTimer)clearInterval(heartbeatTimer);
+  heartbeatTimer=setInterval(()=>{fetch('/api/scribe/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})}).catch(()=>{})},120000);
+}
+function onSoapEdit(sec){fetch('/api/scribe/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,section:sec,content:document.getElementById('soap-'+sec.charAt(0)).value})}).catch(()=>{})}
+function startPolling(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(async()=>{try{const r=await fetch('/api/scribe/soap?session_id='+sessionId);const d=await r.json();if(d.soap){['s','o','a','p'].forEach((k,i)=>{const key=['subjective','objective','assessment','plan'][i];const el=document.getElementById('soap-'+k);if(el&&document.activeElement!==el&&d.soap[key]&&d.soap[key]!==el.value)el.value=d.soap[key]})}if(d.signature){document.getElementById('sigPanel').style.display='block';document.getElementById('downloadBtn').disabled=false}}catch(e){}},5000)}
+function toggleMic(){isRecording?stopMic():startMic()}
+function startMic(){if(!('webkitSpeechRecognition'in window)){toast('Use Chrome');return}const SR=webkitSpeechRecognition;recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';recognition.onresult=async e=>{let f='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)f+=e.results[i][0].transcript+' ';if(f){const el=document.getElementById('micTranscript');if(el)el.textContent+=f;fetch('/api/scribe/listen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,text:f})}).catch(()=>{})}};recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')stopMic()};recognition.onend=()=>{if(isRecording)recognition.start()};recognition.start();isRecording=true;document.getElementById('recordBtn').textContent='⏹ Stop';document.getElementById('recordBtn').className='rec-btn on'}
+function stopMic(){isRecording=false;if(recognition){recognition.stop();recognition=null}document.getElementById('recordBtn').textContent='🎤 Start Listening';document.getElementById('recordBtn').className='rec-btn'}
+async function handlePaste(){const t=document.getElementById('pasteText').value.trim();if(!t)return;const r=await fetch('/api/scribe/paste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,text:t})});const d=await r.json();if(d.success)updateSoapUI(d.soap)}
+function handleUpload(f){if(!f)return;const fd=new FormData();fd.append('audio',f);fd.append('session_id',sessionId);fetch('/api/scribe/upload',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{if(d.success){updateSoapUI(d.soap);toast('Transcribed')}})}
+function updateSoapUI(soap){if(!soap)return;['s','o','a','p'].forEach((k,i)=>{const key=['subjective','objective','assessment','plan'][i];const el=document.getElementById('soap-'+k);if(el&&soap[key]&&document.activeElement!==el)el.value=soap[key]})}
+async function runReview(type){document.getElementById('reviewResult').textContent='⏳...';const r=await fetch('/api/review/'+type,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})});const d=await r.json();document.getElementById('reviewResult').innerHTML=(d.review||'Done').replace(/\n/g,'<br>');
+  // Auto-run red flags after clinical review
+  if(type==='clinical'){fetch('/api/review/redflags',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})}).catch(()=>{})}
+}
+async function searchRAG(){
+  const text=[document.getElementById('soap-s')?.value,document.getElementById('soap-a')?.value].filter(Boolean).join(' ');
+  if(!text){toast('Need SOAP content first');return}
+  const r=await fetch('/api/rag/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text})});
+  const d=await r.json();const el=document.getElementById('ragResults');el.style.display='block';
+  el.innerHTML=d.results?.length?d.results.map(r=>`<div class="rag-item"><span class="cat">${r.category}</span> <span class="score">${(r.score*100).toFixed(0)}%</span><br>${r.content||r.title}</div>`).join(''):'No relevant medical knowledge found';
+}
+async function finalize(){if(isRecording)stopMic();await fetch('/api/scribe/finalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})});document.getElementById('sigPanel').style.display='block';toast('Ready for signature')}
+async function signNote(){await fetch('/api/scribe/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,doctor_name:document.getElementById('sigName').value,license:document.getElementById('sigLicense').value})});document.getElementById('downloadBtn').disabled=false;toast('Signed')}
+function downloadNote(){window.open('/api/scribe/download?session_id='+sessionId,'_blank')}
+function resetConsult(){if(isRecording)stopMic();['s','o','a','p'].forEach(k=>{const el=document.getElementById('soap-'+k);if(el)el.value=''});fetch('/api/scribe/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient:selectedPatient})}).then(r=>r.json()).then(d=>{sessionId=d.session_id});toast('New consult')}
+async function voiceCommand(){if(!('webkitSpeechRecognition'in window)){toast('Use Chrome');return}const SR=webkitSpeechRecognition;const r=new SR();r.continuous=false;r.interimResults=false;r.lang='en-US';toast('Listening...');r.onresult=e=>{const cmd=e.results[0][0].transcript.toLowerCase();toast(cmd);if(cmd.includes('start'))startMic();else if(cmd.includes('stop'))stopMic();else if(cmd.includes('review'))runReview('clinical');else if(cmd.includes('billing'))runReview('billing');else if(cmd.includes('finalize'))finalize()};r.start()}
+
+// ═══════ MODALS ═══════
+function openModal(id){
+  if(id==='apptModal'){loadSchedPatients();document.getElementById('mainContent').insertAdjacentHTML('beforeend',`<div class="modal-overlay show" id="${id}"><div class="modal"><h3>📅 New Appointment</h3><input placeholder="Search patient..." id="apptSearch" oninput="searchApptP()"><div id="apptPList" style="max-height:100px;overflow-y:auto;margin-bottom:8px"></div><div class="row"><input type="date" id="apptDate"><input type="time" id="apptTime" value="09:00"></div><input placeholder="Reason" id="apptReason"><div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-p" style="flex:1" onclick="createAppt()">Schedule</button><button class="btn btn-g" onclick="closeModal('${id}')">Cancel</button></div></div></div>`)}
+  else if(id==='regModal'){document.getElementById('mainContent').insertAdjacentHTML('beforeend',`<div class="modal-overlay show" id="${id}"><div class="modal"><h3>👤 New Patient</h3><div class="row"><input placeholder="First Name" id="rf"><input placeholder="Last Name" id="rl"></div><input type="date" id="rd"><div class="row"><input placeholder="Phone" id="rp"><input placeholder="Email" id="re"></div><div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-p" style="flex:1" onclick="regPatient()">Register</button><button class="btn btn-g" onclick="closeModal('${id}')">Cancel</button></div></div></div>`)}
+}
+function closeModal(id){const el=document.getElementById(id);if(el)el.remove()}
+let apptPatient=null;
+function loadSchedPatients(){fetch('/api/patients').then(r=>r.json()).then(d=>{const list=document.getElementById('apptPList');if(!list)return;list.innerHTML='';d.patients?.forEach(p=>{const div=document.createElement('div');div.style.cssText='padding:4px 0;font-size:11px;cursor:pointer';div.textContent=p.first_name+' '+p.last_name;div.onclick=()=>{apptPatient={id:p.id,name:p.first_name+' '+p.last_name};const s=document.getElementById('apptSearch');if(s)s.value=apptPatient.name;list.innerHTML=''};list.appendChild(div)})})}
+function searchApptP(){loadSchedPatients()}
+async function createAppt(){const d=document.getElementById('apptDate').value,t=document.getElementById('apptTime').value;if(!d||!t)return toast('Date/time required');await fetch('/api/appointments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient_id:apptPatient?.id,appointment_date:`${d}T${t}:00`,reason:document.getElementById('apptReason').value})});closeModal('apptModal');loadDashboard();loadSchedule();toast('Scheduled: '+d+' '+t)}
+async function regPatient(){const d={first_name:document.getElementById('rf').value,last_name:document.getElementById('rl').value,date_of_birth:document.getElementById('rd').value,phone:document.getElementById('rp').value,email:document.getElementById('re').value};const r=await fetch('/api/patients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});const p=await r.json();closeModal('regModal');if(p.success){selectedPatient={id:p.patient.id,name:p.patient.first_name+' '+p.patient.last_name};toast('Registered: '+selectedPatient.name);loadPatients();loadDashboard()}else toast('Failed: '+p.error)}
+
+// Patient search for consult room
+function searchPatientForConsult(){
+  fetch('/api/patients').then(r=>r.json()).then(d=>{
+    const html=d.patients?.map(p=>`<div class="patient-item" onclick="selectPatientForConsult(${p.id},'${p.first_name} ${p.last_name}')">${p.first_name} ${p.last_name} | ${p.date_of_birth?.split('T')[0]||''}</div>`).join('')||'None';
+    document.getElementById('mainContent').insertAdjacentHTML('beforeend',`<div class="modal-overlay show" id="consultPatientModal"><div class="modal"><h3>👤 Select Patient</h3><div style="max-height:250px;overflow-y:auto">${html}</div><button class="btn btn-g" style="width:100%;margin-top:12px" onclick="closeModal('consultPatientModal')">Cancel</button></div></div>`);
+  });
+}
+function selectPatientForConsult(id,name){
+  selectedPatient={id,name};
+  document.getElementById('consultPatientLabel').textContent=name;
+  closeModal('consultPatientModal');
+  fetch('/api/scribe/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,patient:selectedPatient})});
+  toast('Patient: '+name);
+}
+// Open consult from dashboard/schedule
+function openConsultForPatient(id,name){
+  selectedPatient={id,name};
+  navTo('consult');
+  setTimeout(()=>{
+    document.getElementById('consultPatientLabel').textContent=name;
+    fetch('/api/scribe/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,patient:selectedPatient})});
+  },500);
+}
+
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)}
+loadDashboard();
+</script>
+</body>
+</html>

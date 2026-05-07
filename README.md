@@ -1,21 +1,101 @@
 # AIMS EHR Platform — Ambient Scribe
 
-Local AI-powered medical scribe with ambient listening, SOAP note generation, two-agent clinical/billing review, patient intake, scheduling, and RAG medical knowledge search.
+Local AI-powered medical scribe with ambient listening, SOAP note generation, two-agent clinical/billing review, patient intake, scheduling, RAG medical knowledge search, **multi-agent EHR generation**, **specialty-specific prompt templates**, and **admin-controllable AI behavior**.
 
 ```
 🏥 AIMS EHR — http://localhost:3003
+⚙️ Admin Panel — http://localhost:3003 → Admin Panel tab
+📦 GitHub — https://github.com/Pablodd1/aims-ambient-scribe
 ```
 
 ## Architecture
 
 ```
-Frontend:  Single-page HTML/JS (no framework)
-Backend:   Express.js (server.js, ~600 lines)
+Frontend:  Single-page HTML/JS (no framework) — 6 pages
+Backend:   Express.js (server.js, ~1,050 lines)
 Database:  Supabase (postgresql + pgvector)
-AI Models: Ollama (local GPU)
-Email:     Brevo REST API
+AI Models: Ollama (local GPU) — llama3.1:8b + qwen2.5-medical + bge-m3
+Email:     Brevo REST API (BREVO_API_KEY env var)
 Sessions:  In-memory (4hr TTL, heartbeat every 2min)
+
+Multi-Agent Pipeline:
+  Agent 1 (Scribe + Coder) → EHR JSON + ICD-10 + CPT codes
+  Agent 2 (Auditor, async)  → Red flag detection + compliance audit
+  Agent 3 (Educator)        → Patient summary at 8th-grade level
 ```
+
+## Multi-Agent Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  POST /api/scribe/generate                              │
+│                                                          │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐ │
+│  │ AGENT 1     │  │ AGENT 2      │  │ AGENT 3        │ │
+│  │ Scribe+     │  │ Auditor      │  │ Educator       │ │
+│  │ Coder       │  │ (async)      │  │                │ │
+│  │             │  │              │  │                │ │
+│  │ llama3.1:8b │  │ qwen2.5-     │  │ llama3.1:8b    │ │
+│  │             │  │ medical      │  │                │ │
+│  │ → EHR JSON  │  │ → Red flags  │  │ → Patient      │ │
+│  │ → ICD-10    │  │ → Compliance │  │   Summary      │ │
+│  │ → CPT codes │  │ → Logged     │  │   (8th grade)  │ │
+│  └─────────────┘  └──────────────┘  └────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Specialty Prompt Templates
+
+| Template | Specialties | Key Features |
+|----------|-------------|--------------|
+| **default** | Primary Care, General | Full SOAP, OLDCARTS, ICD-10/CPT |
+| **chiro-pip** | Chiropractic, PIP, Auto Accident | EMC Statement, ROM testing, -AT modifier |
+| **psychiatry** | Psychiatry, Behavioral Health | PHQ-9/GAD-7, MSE, Risk Assessment |
+| **primary-care** | Family Medicine, IM, Preventive | USPSTF screening, ASCVD risk, medication reconciliation |
+| **orthopedics** | Orthopedics, Sports Medicine | Laterality, special tests, imaging correlation |
+
+All templates are admin-editable via the Admin Panel UI. Changes take effect immediately.
+
+## Competitive Advantages
+
+| Feature | AIMS | Nabla | DeepScribe | Suki | Freed | Abridge |
+|---------|------|-------|------------|------|-------|---------|
+| **Admin-editable prompts** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Multi-agent (scribe+coder+auditor)** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Florida PIP / EMC Statement** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Specialty-specific templates** | ✅ | ✅ | ✅ | Partial | ❌ | ❌ |
+| **Patient summary (8th-grade)** | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **Real-time red flag audit** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **ICD-10 + CPT with rationale** | ✅ | Limited | Separate | ❌ | ❌ | ❌ |
+| **Runs 100% local (Ollama)** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **No per-visit pricing** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+## Admin Panel
+
+Accessible via the ⚙️ Admin Panel tab in the sidebar.
+
+### Prompt Template Editor
+- Create, edit, version, and toggle prompt templates
+- Full system prompt editing with variable support
+- Note template editing (shown to doctor as starting point)
+- Specialties mapping (auto-routing)
+
+### Provider Status Dashboard
+- 🤖 LLM: Ollama connection status
+- 📧 Brevo: Email configured status
+- 🎙 Deepgram: Transcription ready (slot)
+- 📱 Twilio: SMS ready (slot)
+
+### Red Flag Audit Log
+- Real-time feed of all audit findings
+- Severity-coded: 🔴 critical, 🟡 warning, 🟢 info
+- Patient + timestamp attribution
+- Persistent across sessions
+
+### System Health Monitor
+- Server status + DB connectivity
+- Loaded Ollama models
+- Quick health check
 
 ## Quick Start
 
@@ -119,6 +199,22 @@ All models use `keep_alive: '2h'` to prevent VRAM unloading between requests.
 |--------|------|---------|
 | `GET` | `/api/audit/tomorrow` | Tomorrow's appointments with patient names, times, reasons |
 | `POST` | `/api/audit/email` | Send tomorrow's schedule via Brevo email |
+
+### Multi-Agent EHR
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/scribe/generate` | Run full multi-agent pipeline: EHR JSON + codes + audit + patient summary |
+
+### Admin Panel
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/admin/prompts` | List all prompt templates |
+| `GET` | `/api/admin/prompts/:id` | Get prompt template detail |
+| `POST` | `/api/admin/prompts` | Create/update prompt template |
+| `PATCH` | `/api/admin/prompts/:id/toggle` | Toggle template active/inactive |
+| `GET` | `/api/admin/prompts/active/:specialty` | Get active prompt for specialty |
+| `GET` | `/api/admin/providers` | Provider configuration status |
+| `GET` | `/api/admin/redflags` | Red flag audit log |
 
 ### Health
 | Method | Path | Purpose |

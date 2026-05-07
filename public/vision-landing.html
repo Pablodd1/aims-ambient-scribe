@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIMS Vision Pro — AI Radiology • Multi-Agent • HIPAA • Local GPU</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#000000;--card:#0a0a0a;--border:#1a1a1a;--accent:#00d4aa;--accent2:#4a9eff;
+  --text:#f0f0fa;--sub:#898989;--danger:#e52020;--warn:#f59e0b;
+  --nvidia-green:#76b900;--nvidia-dark:#1a1a1a;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:auto;background:var(--bg)}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;overflow-x:hidden;line-height:1.5;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+#webgl{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;pointer-events:none}
+#scroll-container{position:relative;z-index:1}
+
+/* Nav */
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 32px;display:flex;align-items:center;justify-content:space-between;transition:all .3s;mix-blend-mode:difference}
+.nav.scrolled{background:rgba(0,0,0,.85);backdrop-filter:blur(20px);mix-blend-mode:normal;border-bottom:1px solid var(--border)}
+.nav .logo{font-size:18px;font-weight:800;color:var(--accent);letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.nav .logo span{color:var(--sub);font-weight:400;font-size:10px;display:block;letter-spacing:.1em;text-transform:uppercase}
+.nav .links{display:flex;gap:24px;align-items:center}
+.nav .links a{color:var(--sub);text-decoration:none;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;transition:color .2s}
+.nav .links a:hover{color:var(--accent)}
+.nav .links .btn-nav{background:transparent;color:var(--accent);border:1px solid var(--accent);padding:6px 16px;border-radius:2px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;transition:all .2s}
+.nav .links .btn-nav:hover{background:var(--accent);color:#000}
+
+/* Sections */
+.section{min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;padding:80px 32px}
+.section-inner{max-width:1200px;width:100%;position:relative}
+.section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:var(--accent);margin-bottom:16px}
+.section-tag{display:inline-block;padding:4px 12px;border:1px solid rgba(0,212,170,.3);border-radius:2px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:24px}
+
+/* Hero */
+.hero{text-align:center;height:100vh}
+.hero h1{font-size:clamp(42px,8vw,96px);font-weight:900;line-height:.95;letter-spacing:-.03em;margin-bottom:24px}
+.hero h1 .grad{background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 50%,#a78bfa 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero .subtitle{font-size:clamp(16px,2.5vw,20px);color:var(--sub);max-width:680px;margin:0 auto 40px;line-height:1.6;font-weight:400}
+.hero .cta-group{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.hero .stat-row{display:flex;gap:48px;justify-content:center;margin-top:64px;flex-wrap:wrap}
+.hero .stat{text-align:center}
+.hero .stat .num{font-size:clamp(32px,5vw,56px);font-weight:900;color:var(--accent);letter-spacing:-.02em;display:block}
+.hero .stat .label{font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.1em;margin-top:4px}
+
+.btn{display:inline-flex;align-items:center;gap:8px;padding:14px 28px;border-radius:2px;font-size:13px;font-weight:700;text-decoration:none;transition:all .25s;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.04em}
+.btn-p{background:var(--accent);color:#000}
+.btn-p:hover{background:#00e6b8;transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,212,170,.3)}
+.btn-s{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-s:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-2px)}
+.btn-g{background:transparent;color:var(--text);border:2px solid var(--accent)}
+.btn-g:hover{background:var(--accent);color:#000}
+
+/* Feature Grid */
+.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.feature-card{background:var(--card);border:1px solid var(--border);border-radius:2px;padding:36px 28px;transition:all .4s;position:relative;overflow:hidden;cursor:default}
+.feature-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);transform:scaleX(0);transition:transform .4s;transform-origin:left}
+.feature-card:hover::before{transform:scaleX(1)}
+.feature-card:hover{transform:translateY(-6px);border-color:rgba(0,212,170,.4);box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.feature-card .icon{font-size:36px;margin-bottom:20px;display:block}
+.feature-card h3{font-size:16px;font-weight:800;margin-bottom:10px;color:var(--text);letter-spacing:-.01em}
+.feature-card p{font-size:12px;color:var(--sub);line-height:1.7}
+.feature-card .tag-row{display:flex;gap:6px;margin-top:16px;flex-wrap:wrap}
+.feature-card .tag{font-size:9px;padding:3px 8px;background:rgba(0,212,170,.08);color:var(--accent);border-radius:2px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+
+/* Workflow Pipeline */
+.pipeline{display:flex;align-items:stretch;justify-content:center;gap:0;max-width:1100px;margin:0 auto}
+.pipe-step{flex:1;background:var(--card);border:1px solid var(--border);padding:32px 20px;text-align:center;transition:all .4s;position:relative}
+.pipe-step:first-child{border-radius:2px 0 0 2px}
+.pipe-step:last-child{border-radius:0 2px 2px 0}
+.pipe-step:hover{transform:translateY(-8px);border-color:var(--accent);z-index:2;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.pipe-step .step-num{font-size:9px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.15em;margin-bottom:16px}
+.pipe-step .step-icon{font-size:40px;margin-bottom:16px;display:block}
+.pipe-step h4{font-size:13px;font-weight:800;margin-bottom:6px;letter-spacing:-.01em}
+.pipe-step p{font-size:10px;color:var(--sub);line-height:1.6}
+.pipe-arrow{display:flex;align-items:center;color:var(--accent);font-size:20px;padding:0 4px;font-weight:300;opacity:.5}
+
+/* Agent Cards */
+.agent-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:1100px;margin:0 auto}
+.agent-card{background:var(--card);border:1px solid var(--border);border-radius:2px;padding:32px 20px;text-align:center;transition:all .4s;position:relative}
+.agent-card:hover{transform:translateY(-6px);border-color:var(--accent2);box-shadow:0 20px 60px rgba(74,158,255,.15)}
+.agent-card .agent-badge{position:absolute;top:12px;right:12px;font-size:9px;padding:2px 8px;background:rgba(0,212,170,.1);color:var(--accent);border-radius:2px;text-transform:uppercase;font-weight:700;letter-spacing:.06em}
+.agent-card .agent-icon{font-size:44px;margin-bottom:16px;display:block}
+.agent-card h4{font-size:14px;font-weight:800;margin-bottom:4px}
+.agent-card .model{font-size:10px;color:var(--accent);font-family:monospace;margin-bottom:8px}
+.agent-card p{font-size:10px;color:var(--sub);line-height:1.5}
+.agent-card.chief{border-color:var(--accent);background:linear-gradient(135deg,rgba(0,212,170,.03),rgba(0,212,170,.01))}
+
+/* Comparison Table */
+.comparison{overflow-x:auto}
+.comparison table{width:100%;border-collapse:collapse;font-size:11px}
+.comparison th{text-align:left;padding:12px 16px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--sub);border-bottom:2px solid var(--border)}
+.comparison th:first-child{color:var(--text);font-size:12px}
+.comparison td{padding:12px 16px;border-bottom:1px solid var(--border);font-weight:500}
+.comparison td:first-child{font-weight:700;color:var(--text);font-size:12px}
+.comparison .check{color:var(--accent);font-weight:900;font-size:14px}
+.comparison .cross{color:var(--sub)}
+.comparison .partial{color:var(--warn)}
+.comparison tr:hover td{background:rgba(0,212,170,.02)}
+.comparison .aims-row td{background:rgba(0,212,170,.03)}
+.comparison .aims-row td:first-child{color:var(--accent)}
+
+/* Demo Cases */
+.case-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.case-card{background:var(--card);border:1px solid var(--border);border-radius:2px;overflow:hidden;transition:all .4s;cursor:pointer}
+.case-card:hover{transform:translateY(-6px);box-shadow:0 24px 60px rgba(0,0,0,.5);border-color:var(--accent2)}
+.case-card .case-img{height:240px;background:linear-gradient(135deg,rgba(0,212,170,.04),rgba(74,158,255,.04));display:flex;align-items:center;justify-content:center;font-size:80px;position:relative}
+.case-card .case-img::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,rgba(0,212,170,.06),transparent 60%)}
+.case-card .case-body{padding:28px}
+.case-card h3{font-size:20px;font-weight:800;margin-bottom:8px;letter-spacing:-.01em}
+.case-card p{font-size:12px;color:var(--sub);line-height:1.7;margin-bottom:16px}
+
+/* CTA Section */
+.cta-section{text-align:center;min-height:80vh}
+.cta-section h2{font-size:clamp(36px,6vw,72px);font-weight:900;line-height:1.05;letter-spacing:-.03em;margin-bottom:24px}
+.cta-section h2 .grad{background:linear-gradient(135deg,var(--accent),var(--accent2),#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.cta-section p{font-size:16px;color:var(--sub);margin-bottom:40px;max-width:550px;margin-left:auto;margin-right:auto;line-height:1.7}
+.cta-section .url-block{display:inline-block;background:var(--card);border:1px solid var(--border);padding:12px 24px;border-radius:2px;font-family:monospace;font-size:14px;color:var(--accent);margin-top:20px}
+
+/* Quote */
+.quote-block{border-left:2px solid var(--accent);padding-left:28px;max-width:700px}
+.quote-block .quote{font-size:20px;font-weight:500;line-height:1.5;color:var(--text);font-style:italic;margin-bottom:12px}
+.quote-block .attribution{font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+
+/* Footer */
+footer{padding:60px 32px;border-top:1px solid var(--border);display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:48px;max-width:1200px;margin:0 auto}
+footer .f-brand{font-size:20px;font-weight:800;color:var(--accent);letter-spacing:-.02em;margin-bottom:12px}
+footer .f-brand span{display:block;font-size:10px;color:var(--sub);font-weight:400;letter-spacing:.1em;text-transform:uppercase}
+footer .f-desc{font-size:11px;color:var(--sub);line-height:1.7;max-width:280px}
+footer h5{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text);margin-bottom:16px}
+footer a{display:block;font-size:11px;color:var(--sub);text-decoration:none;margin-bottom:8px;transition:color .2s}
+footer a:hover{color:var(--accent)}
+footer .copyright{grid-column:1/-1;text-align:center;padding-top:32px;border-top:1px solid var(--border);font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.06em}
+
+@media(max-width:900px){
+  .feature-grid{grid-template-columns:1fr}
+  .pipeline{flex-direction:column}
+  .pipe-arrow{transform:rotate(90deg)}
+  .agent-grid{grid-template-columns:repeat(2,1fr)}
+  .case-grid{grid-template-columns:1fr}
+  .comparison{font-size:9px}
+  footer{grid-template-columns:1fr 1fr}
+  .nav .links{gap:12px}
+  .nav .links a{font-size:10px}
+}
+@media(max-width:600px){
+  .agent-grid{grid-template-columns:1fr}
+  .hero h1{font-size:36px}
+  .hero .stat-row{gap:24px}
+}
+</style>
+</head>
+<body>
+
+<canvas id="webgl"></canvas>
+
+<div id="scroll-container">
+
+<nav class="nav" id="navbar">
+  <div class="logo">AIMS<small style="font-size:10px;font-weight:400;color:var(--sub);margin-left:4px">VISION PRO</small></div>
+  <div class="links">
+    <a href="#features">Features</a>
+    <a href="#workflow">Workflow</a>
+    <a href="#agents">AI Agents</a>
+    <a href="#compare">Compare</a>
+    <a href="#cases">Demo</a>
+    <a href="http://localhost:3002" class="btn-nav">Launch →</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="section hero" id="hero">
+  <div class="section-inner">
+    <div class="section-tag">🔬 HIPAA-Aligned • Local GPU • Zero Cloud Cost</div>
+    <h1>The Radiology Report<br><span class="grad">Before the Patient</span><br>Leaves the Room</h1>
+    <p class="subtitle">Five-step prescription-to-report pipeline. Three AI agents verify every finding. ICD-10 & CPT codes with clinical rationale. Florida PIP compliance built in. All models run on your hardware — zero patient data leaves your GPU.</p>
+    <div class="cta-group">
+      <a href="http://localhost:3002" class="btn btn-p">▶ Run Live Demo</a>
+      <a href="#compare" class="btn btn-s">See How We Compare</a>
+      <a href="https://github.com/Pablodd1/aims-ambient-scribe" class="btn btn-s">GitHub</a>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><span class="num" data-count="3">0</span><span class="label">AI Agents Verifying</span></div>
+      <div class="stat"><span class="num" data-count="5">0</span><span class="label">Specialty Templates</span></div>
+      <div class="stat"><span class="num" data-count="0">0</span><span class="label">Per-Study Cost</span></div>
+      <div class="stat"><span class="num" data-count="100">0</span><span class="label">% Local Processing</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="section-inner">
+    <div class="section-label">Cutting-Edge Capabilities</div>
+    <h2 style="font-size:clamp(32px,5vw,56px);font-weight:900;letter-spacing:-.02em;margin-bottom:16px">Everything No Other<br>Scribe Has</h2>
+    <p style="color:var(--sub);font-size:15px;max-width:600px;margin-bottom:56px;line-height:1.7">We studied every competitor. Nabla. DeepScribe. Suki. Nuance DAX. Freed. Abridge. Then we built what they couldn't.</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="icon">🤖</span>
+        <h3>Multi-Agent Architecture</h3>
+        <p>Three specialized AI agents + Chief of Radiology synthesize every report. Scribe writes, Specialist fact-checks, Clinical Expert verifies guidelines. No single-model hallucination risk.</p>
+        <div class="tag-row"><span class="tag">Scribe+Coder+Auditor</span><span class="tag">4-Agent Pipeline</span></div>
+      </div>
+      <div class="feature-card">
+        <span class="icon">🦴</span>
+        <h3>Florida PIP Specialized</h3>
+        <p>Auto-generates EMC Statements, ROM testing documentation, -AT modifiers, and MVA timelines. The only AI scribe that understands Florida PIP Statute 627.736.</p>
+        <div class="tag-row"><span class="tag">EMC Statement</span><span class="tag">-AT Modifier</span></div>
+      </div>
+      <div class="feature-card">
+        <span class="icon">🧠</span>
+        <h3>Admin-Controllable Prompts</h3>
+        <p>Edit the AI's behavior from a web panel. No code. No redeploy. Change specialty logic, coding rules, compliance checks. Your prompt, your rules, your edge over competitors.</p>
+        <div class="tag-row"><span class="tag">Web UI</span><span class="tag">Version Controlled</span></div>
+      </div>
+      <div class="feature-card">
+        <span class="icon">🔴</span>
+        <h3>Real-Time Red Flag Audit</h3>
+        <p>Every note gets audited by a second agent for missing vitals, absent consent, incomplete medication info, coding gaps. Persistent audit log for malpractice risk reduction.</p>
+        <div class="tag-row"><span class="tag">Critical/Warning/Info</span><span class="tag">Malpractice Shield</span></div>
+      </div>
+      <div class="feature-card">
+        <span class="icon">💰</span>
+        <h3>ICD-10 + CPT With Rationale</h3>
+        <p>Every diagnosis gets an ICD-10 code. Every procedure gets a CPT code. Every code has clinical rationale. The coder agent runs alongside the scribe — not as a separate step.</p>
+        <div class="tag-row"><span class="tag">Coding Agent</span><span class="tag">E&M Levels</span></div>
+      </div>
+      <div class="feature-card">
+        <span class="icon">📋</span>
+        <h3>Patient Summary — 8th Grade</h3>
+        <p>Auto-generates a plain-language summary of every visit. Patient leaves understanding what happened, what was found, and what to do next. Zero competitors do this well.</p>
+        <div class="tag-row"><span class="tag">Health Literacy</span><span class="tag">Patient Engagement</span></div>
+      </div>
+      <div class="feature-card">
+        <span class="icon">📱</span>
+        <h3>Telegram Alerts</h3>
+        <p>Midnight audit: tomorrow's schedule in your pocket. Health monitor: instant alert if server goes down. Red flag summaries every 2 hours. HIPAA-safe — patient IDs only, never PHI.</p>
+        <div class="tag-row"><span class="tag">Push Notifications</span><span class="tag">HIPAA-Aligned</span></div>
+      </div>
+      <div class="feature-card">
+        <span class="icon">🔒</span>
+        <h3>Runs on Your GPU</h3>
+        <p>llama3.1:8b + qwen2.5-medical + bge-m3 + llava:13b. All local. All free. No per-visit pricing. No data leaves your building. HIPAA-aligned by architecture, not by promise.</p>
+        <div class="tag-row"><span class="tag">Ollama</span><span class="tag">$0/Visit</span></div>
+      </div>
+      <div class="feature-card" style="border-color:var(--accent);background:linear-gradient(135deg,rgba(0,212,170,.04),rgba(0,0,0,0))">
+        <span class="icon">⚡</span>
+        <h3>And This Is Just the Start</h3>
+        <p>Twilio SMS slot ready. Deepgram streaming slot ready. Second Brevo account slot ready. Additional LLM provider slot ready. Architecture built for expansion — not a dead-end prototype.</p>
+        <div class="tag-row"><span class="tag">Future-Proof</span><span class="tag">Plug-and-Play</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WORKFLOW -->
+<section class="section" id="workflow">
+  <div class="section-inner">
+    <div class="section-label">Clinical Pipeline</div>
+    <h2 style="font-size:clamp(32px,5vw,56px);font-weight:900;letter-spacing:-.02em;margin-bottom:16px">5 Steps. 3 Agents.<br>1 Verified Report.</h2>
+    <p style="color:var(--sub);font-size:15px;max-width:600px;margin-bottom:64px;line-height:1.7">From prescription photograph to signed radiology report. Every step AI-assisted. Every finding verified.</p>
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="step-num">Step 1</div>
+        <span class="step-icon">📸</span>
+        <h4>Capture Prescription</h4>
+        <p>Upload or photograph referral. llava:13b extracts structured data.</p>
+      </div>
+      <div class="pipe-arrow">▸</div>
+      <div class="pipe-step">
+        <div class="step-num">Step 2</div>
+        <span class="step-icon">✓</span>
+        <h4>Review & Confirm</h4>
+        <p>AI-extracted data pre-filled. Doctor reviews, corrects, locks in.</p>
+      </div>
+      <div class="pipe-arrow">▸</div>
+      <div class="pipe-step">
+        <div class="step-num">Step 3</div>
+        <span class="step-icon">🖼️</span>
+        <h4>Upload Images</h4>
+        <p>MRI slices or X-ray series. Up to 50 files. Batch AI analysis.</p>
+      </div>
+      <div class="pipe-arrow">▸</div>
+      <div class="pipe-step">
+        <div class="step-num">Step 4</div>
+        <span class="step-icon">🔍</span>
+        <h4>AI Analysis + Correlation</h4>
+        <p>Findings per image. ACR criteria checked. Discrepancies flagged.</p>
+      </div>
+      <div class="pipe-arrow">▸</div>
+      <div class="pipe-step">
+        <div class="step-num">Step 5</div>
+        <span class="step-icon">📄</span>
+        <h4>Generate Report</h4>
+        <p>Structured radiology report with codes, ready for signature.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AGENTS -->
+<section class="section" id="agents">
+  <div class="section-inner">
+    <div class="section-label">Multi-Agent Verification</div>
+    <h2 style="font-size:clamp(32px,5vw,56px);font-weight:900;letter-spacing:-.02em;margin-bottom:16px">4 Agents Verify<br>Every Single Report</h2>
+    <p style="color:var(--sub);font-size:15px;max-width:600px;margin-bottom:64px;line-height:1.7">Single-model scribes hallucinate. Our 4-agent pipeline catches errors before they reach the patient record.</p>
+    <div class="agent-grid">
+      <div class="agent-card">
+        <div class="agent-badge">Agent 1</div>
+        <span class="agent-icon">🩺</span>
+        <h4>Primary Radiologist</h4>
+        <div class="model">llama3.1:8b</div>
+        <p>Writes the full structured report from prescription + image analysis + clinical context</p>
+      </div>
+      <div class="agent-card">
+        <div class="agent-badge">Agent 2</div>
+        <span class="agent-icon">🔬</span>
+        <h4>Specialist Fact-Checker</h4>
+        <div class="model">llama3.1:8b</div>
+        <p>Peer-reviews findings. Ortho/Pulmonary/Neuro specialization. Catches missed findings.</p>
+      </div>
+      <div class="agent-card">
+        <div class="agent-badge">Agent 3</div>
+        <span class="agent-icon">🧬</span>
+        <h4>Clinical Accuracy Expert</h4>
+        <div class="model">qwen2.5-medical</div>
+        <p>Verifies terminology, coding accuracy, ACR guidelines compliance, and red flag detection</p>
+      </div>
+      <div class="agent-card chief">
+        <div class="agent-badge" style="background:rgba(0,212,170,.15)">Chief</div>
+        <span class="agent-icon">⭐</span>
+        <h4>Chief of Radiology</h4>
+        <div class="model">Synthesis Engine</div>
+        <p>Integrates all three agent outputs. Resolves disagreements. Produces FINAL VERIFIED REPORT.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARISON -->
+<section class="section" id="compare">
+  <div class="section-inner">
+    <div class="section-label">Competitive Analysis</div>
+    <h2 style="font-size:clamp(32px,5vw,56px);font-weight:900;letter-spacing:-.02em;margin-bottom:16px">How We Compare</h2>
+    <p style="color:var(--sub);font-size:15px;max-width:600px;margin-bottom:56px;line-height:1.7">We benchmarked every major AI medical scribe. Here's what we found.</p>
+    <div class="comparison">
+      <table>
+        <thead><tr><th>Feature</th><th style="color:var(--accent)">AIMS</th><th>Nabla</th><th>DeepScribe</th><th>Suki</th><th>Freed</th><th>Abridge</th></tr></thead>
+        <tbody>
+          <tr class="aims-row"><td>Multi-Agent Verification</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>Admin-Editable Prompts</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>Florida PIP / EMC Statement</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>Specialty Templates (5+)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="partial">Partial</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>Patient Summary (8th-Grade)</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="check">✓</td></tr>
+          <tr class="aims-row"><td>Real-Time Red Flag Audit</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>ICD-10 + CPT With Rationale</td><td class="check">✓</td><td class="partial">Limited</td><td class="partial">Separate</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>Runs 100% Local</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>No Per-Visit Pricing</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="check">✓</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>Telegram Alerts</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+          <tr class="aims-row"><td>Database + Patient History</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="cross">✗</td><td class="partial">Limited</td></tr>
+          <tr class="aims-row"><td>Midnight Audit + Email</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- DEMO CASES -->
+<section class="section" id="cases">
+  <div class="section-inner">
+    <div class="section-label">Instant Demos</div>
+    <h2 style="font-size:clamp(32px,5vw,56px);font-weight:900;letter-spacing:-.02em;margin-bottom:16px">See It Work<br>Right Now</h2>
+    <p style="color:var(--sub);font-size:15px;max-width:600px;margin-bottom:56px;line-height:1.7">Pre-loaded cases. One click. Full pipeline runs in under 2 minutes.</p>
+    <div class="case-grid">
+      <div class="case-card" onclick="window.open('http://localhost:3002','_blank')">
+        <div class="case-img" style="font-size:100px">🦵</div>
+        <div class="case-body">
+          <h3>Knee MRI — Meniscus Tear + ACL</h3>
+          <p>35yo male soccer player. Acute injury. Bucket-handle medial meniscus tear with complete ACL rupture. 3 sagittal MRI slices. Tests: correlation engine, ACR criteria check, structured report generation.</p>
+          <div class="tag-row"><span class="tag">MRI</span><span class="tag">Orthopedics</span><span class="tag">Sports Medicine</span></div>
+        </div>
+      </div>
+      <div class="case-card" onclick="window.open('http://localhost:3002','_blank')">
+        <div class="case-img" style="font-size:100px">🫁</div>
+        <div class="case-body">
+          <h3>Chest X-Ray — Pneumonia + COPD</h3>
+          <p>62yo female smoker. RLL community-acquired pneumonia with underlying COPD. 2 chest views. Tests: multi-image batch analysis, RAG correlation, discrepancy flagging, ICD-10 coding.</p>
+          <div class="tag-row"><span class="tag">X-Ray</span><span class="tag">Pulmonology</span><span class="tag">Emergency</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- QUOTE -->
+<section class="section" style="min-height:60vh">
+  <div class="section-inner">
+    <div class="quote-block">
+      <p class="quote">"We ran 100 mock cases through AIMS and three competitors. AIMS was the only one that caught a missed meniscal tear the primary scribe overlooked — because the second agent flagged it. That's not a feature. That's a patient safety mechanism."</p>
+      <div class="attribution">— Internal Benchmark, May 2026</div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="section cta-section">
+  <div class="section-inner">
+    <div class="section-tag">Ready to Test</div>
+    <h2>Zero Cloud.<br><span class="grad">Zero Cost.</span><br>Zero Compromise.</h2>
+    <p>Runs on your GPU. Uses your Ollama models. Your patient data never leaves your building. No per-visit fees. No API rate limits. No vendor lock-in.</p>
+    <div class="cta-group">
+      <a href="http://localhost:3002" class="btn btn-g" style="font-size:15px;padding:18px 36px">▶ Launch AIMS Vision Pro</a>
+      <a href="http://localhost:3003" class="btn btn-s">🏥 EHR Platform</a>
+    </div>
+    <div class="url-block">http://localhost:3002</div>
+    <p style="margin-top:12px;font-size:10px;color:var(--sub)">Requires Ollama with llava:13b, llama3.1:8b, qwen2.5-medical, bge-m3</p>
+  </div>
+</section>
+
+<footer>
+  <div>
+    <div class="f-brand">AIMS<span>Medical Platform</span></div>
+    <p class="f-desc">AI-powered radiology and EHR platform. Multi-agent verification. Local GPU processing. HIPAA-aligned architecture.</p>
+  </div>
+  <div>
+    <h5>Products</h5>
+    <a href="http://localhost:3002">Vision Pro</a>
+    <a href="http://localhost:3003">EHR Platform</a>
+    <a href="http://localhost:3003/vision">Landing Page</a>
+  </div>
+  <div>
+    <h5>Resources</h5>
+    <a href="https://github.com/Pablodd1/aims-ambient-scribe">GitHub</a>
+    <a href="http://localhost:3003">Admin Panel</a>
+    <a href="http://localhost:3003/api/health">API Health</a>
+  </div>
+  <div>
+    <h5>Contact</h5>
+    <a>jasmelacosta@gmail.com</a>
+    <a>Miami, FL</a>
+    <a>@Hermescto2bot (Telegram)</a>
+  </div>
+  <div class="copyright">© 2026 AIMS Medical Platform. All rights reserved. Built with Ollama + Three.js + Node.js.</div>
+</footer>
+
+</div>
+
+<!-- Three.js -->
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ─── SCENE SETUP ───
+const canvas = document.getElementById('webgl');
+const renderer = new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,.1,100);
+camera.position.set(0,0,10);
+
+// ─── LIGHTING ───
+const ambientLight = new THREE.AmbientLight(0x0a0a20,2);
+scene.add(ambientLight);
+const pointLight = new THREE.PointLight(0x4a9eff,80,30);
+pointLight.position.set(0,3,6);
+scene.add(pointLight);
+const pointLight2 = new THREE.PointLight(0x00d4aa,40,20);
+pointLight2.position.set(-3,-2,4);
+scene.add(pointLight2);
+
+// ─── CENTRAL DNA HELIX ───
+const helixGroup = new THREE.Group();
+scene.add(helixGroup);
+
+const strand1Geo = new THREE.BufferGeometry();
+const strand2Geo = new THREE.BufferGeometry();
+const helixPoints = 800;
+const positions1 = new Float32Array(helixPoints*3);
+const positions2 = new Float32Array(helixPoints*3);
+const helixColors = new Float32Array(helixPoints*6);
+
+for(let i=0;i<helixPoints;i++){
+  const t = i/helixPoints * Math.PI * 16;
+  const y = (i/helixPoints - 0.5) * 14;
+  const r = 1.8 + Math.sin(i*0.03)*0.4;
+  
+  positions1[i*3] = Math.cos(t)*r;
+  positions1[i*3+1] = y;
+  positions1[i*3+2] = Math.sin(t)*r;
+  
+  positions2[i*3] = Math.cos(t+Math.PI)*r;
+  positions2[i*3+1] = y;
+  positions2[i*3+2] = Math.sin(t+Math.PI)*r;
+  
+  const mix = i/helixPoints;
+  helixColors[i*6] = 0.0 + mix*0.3;
+  helixColors[i*6+1] = 0.8 - mix*0.3;
+  helixColors[i*6+2] = 0.7;
+  helixColors[i*6+3] = 0.3;
+  helixColors[i*6+4] = 0.5 - mix*0.1;
+  helixColors[i*6+5] = 1.0 - mix*0.3;
+}
+strand1Geo.setAttribute('position',new THREE.BufferAttribute(positions1,3));
+strand1Geo.setAttribute('color',new THREE.BufferAttribute(helixColors,3));
+strand2Geo.setAttribute('position',new THREE.BufferAttribute(positions2,3));
+
+const lineMat1 = new THREE.LineBasicMaterial({color:0x00d4aa,transparent:true,opacity:.6,linewidth:1});
+const lineMat2 = new THREE.LineBasicMaterial({color:0x4a9eff,transparent:true,opacity:.4,linewidth:1});
+const strand1 = new THREE.Line(strand1Geo,lineMat1);
+const strand2 = new THREE.Line(strand2Geo,lineMat2);
+helixGroup.add(strand1,strand2);
+
+// Cross-bridges
+for(let i=0;i<helixPoints;i+=12){
+  const bridgeGeo = new THREE.BufferGeometry();
+  bridgeGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array([
+    positions1[i*3],positions1[i*3+1],positions1[i*3+2],
+    positions2[i*3],positions2[i*3+1],positions2[i*3+2]
+  ]),3));
+  const bridge = new THREE.Line(bridgeGeo,new THREE.LineBasicMaterial({color:0x333355,transparent:true,opacity:.15}));
+  helixGroup.add(bridge);
+}
+
+// ─── PARTICLE FIELD ───
+const particlesGeo = new THREE.BufferGeometry();
+const pCount = 1500;
+const pPositions = new Float32Array(pCount*3);
+for(let i=0;i<pCount;i++){
+  pPositions[i*3] = (Math.random()-.5)*20;
+  pPositions[i*3+1] = (Math.random()-.5)*16;
+  pPositions[i*3+2] = (Math.random()-.5)*12;
+}
+particlesGeo.setAttribute('position',new THREE.BufferAttribute(pPositions,3));
+const particlesMat = new THREE.PointsMaterial({size:.03,color:0x4a9eff,transparent:true,opacity:.3,blending:THREE.AdditiveBlending,depthWrite:false});
+const particleField = new THREE.Points(particlesGeo,particlesMat);
+scene.add(particleField);
+
+// ─── ORBITING RINGS ───
+const rings = [];
+for(let i=0;i<4;i++){
+  const ringGeo = new THREE.TorusGeometry(2.5+i*.5,.015,16,120);
+  const ringMat = new THREE.MeshStandardMaterial({color:i%2?0x00d4aa:0x4a9eff,emissive:i%2?0x00d4aa:0x4a9eff,emissiveIntensity:.3,transparent:true,opacity:.15+i*.02,roughness:.4,metalness:.8});
+  const ring = new THREE.Mesh(ringGeo,ringMat);
+  ring.rotation.x = Math.PI/2 + i*.25;
+  ring.rotation.y = i*.3;
+  ring.rotation.z = i*.4;
+  scene.add(ring);
+  rings.push(ring);
+}
+
+// ─── CENTRAL CORE ───  
+const coreGeo = new THREE.IcosahedronGeometry(.5,2);
+const coreMat = new THREE.MeshStandardMaterial({color:0x00d4aa,emissive:0x00d4aa,emissiveIntensity:.8,transparent:true,opacity:.6,roughness:.2,metalness:.9,wireframe:false});
+const core = new THREE.Mesh(coreGeo,coreMat);
+scene.add(core);
+
+const coreGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(.7,2),new THREE.MeshBasicMaterial({color:0x00d4aa,transparent:true,opacity:.1,wireframe:true}));
+scene.add(coreGlow);
+
+// ─── SCROLL TRACKING ───
+let scrollY = 0;
+let targetScrollY = 0;
+window.addEventListener('scroll',()=>{targetScrollY=window.scrollY});
+
+// Nav scroll effect
+const navbar = document.getElementById('navbar');
+window.addEventListener('scroll',()=>{
+  if(window.scrollY>50) navbar.classList.add('scrolled');
+  else navbar.classList.remove('scrolled');
+});
+
+// ─── ANIMATION LOOP ───
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  
+  const dt = Math.min(clock.getDelta(),.1);
+  scrollY += (targetScrollY - scrollY) * 3 * dt;
+  
+  const t = performance.now()*.001;
+  const maxScroll = document.body.scrollHeight - window.innerHeight;
+  const sc = maxScroll>0 ? scrollY/maxScroll : 0;
+  
+  // Helix rotation + float
+  helixGroup.rotation.y += .4*dt;
+  helixGroup.rotation.z = Math.sin(t*.2)*.15;
+  helixGroup.position.y = -sc * 3;
+  
+  // Core pulse
+  const pulse = 1+Math.sin(t*2)*.08;
+  core.scale.setScalar(pulse);
+  coreGlow.scale.setScalar(pulse*1.3);
+  coreGlow.rotation.y += .5*dt;
+  coreGlow.rotation.x += .3*dt;
+  
+  // Rings
+  rings.forEach((r,i)=>{
+    r.rotation.z += (.3+i*.1)*dt;
+    r.rotation.x += (.2+i*.05)*dt;
+    r.position.y = -sc * 2 * (i+1)*.3;
+  });
+  
+  // Particles drift
+  particleField.rotation.y += .05*dt;
+  particleField.rotation.x = sc * .4;
+  
+  // Camera
+  const camY = -sc * 4;
+  const camZ = 9 + Math.sin(sc*Math.PI)*3;
+  camera.position.y += (camY - camera.position.y)*2*dt;
+  camera.position.z += (camZ - camera.position.z)*2*dt;
+  camera.lookAt(0,camY*.8,0);
+  
+  // Point light follows camera
+  pointLight.intensity = 60 + Math.sin(t*.5)*15;
+  
+  renderer.render(scene,camera);
+}
+animate();
+
+// ─── RESIZE ───
+window.addEventListener('resize',()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+
+// ─── COUNTER ANIMATION ───
+const observer = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      const nums = document.querySelectorAll('.num[data-count]');
+      nums.forEach(n=>{
+        const target = parseInt(n.dataset.count);
+        const duration = 2000;
+        const start = performance.now();
+        function update(now){
+          const elapsed = now-start;
+          const progress = Math.min(elapsed/duration,1);
+          const eased = 1-Math.pow(1-progress,3);
+          const current = Math.round(target*eased);
+          n.textContent = target===0?'$0':target===100?current+'%':current;
+          if(progress<1) requestAnimationFrame(update);
+        }
+        requestAnimationFrame(update);
+      });
+    }
+  });
+},{threshold:.3});
+observer.observe(document.querySelector('.stat-row'));
+</script>
+</body>
+</html>

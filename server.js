@@ -947,6 +947,11 @@ app.post('/api/intake/voice-submit', upload.single('audio'), async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Serve AIMS Vision landing page
+app.get('/vision', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'vision-landing.html'));
+});
+
 // Serve patient intake page at /intake/:token
 app.get('/intake/:token', (req, res) => {
   const link = intakeLinks[req.params.token];

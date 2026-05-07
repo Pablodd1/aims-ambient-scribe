@@ -18,15 +18,19 @@ const upload = multer({ dest: uploadDir, limits: { fileSize: 100 * 1024 * 1024 }
 
 // DB
 const pool = new Pool({
-  connectionString: 'postgresql://postgres.vodhhauwowkalvaxzqyv:Hyatt123%40password2@aws-1-us-west-2.pooler.supabase.com:6543/postgres',
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres.vodhhauwowkalvaxzqyv:Hyatt123%40password2@aws-1-us-west-2.pooler.supabase.com:6543/postgres',
   ssl: { rejectUnauthorized: false }, max: 5, connectionTimeoutMillis: 10000,
 });
 
 // ═══════════════════ TELEGRAM NOTIFICATIONS ═══════════════════
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8659726749:AAHt5annAdlRTkG_nLwfT8n5HNj5duPJA90';
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '7838956683';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 
 async function sendTelegram(text, options = {}) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.log('Telegram not configured — skipping notification');
+    return false;
+  }
   try {
     const payload = {
       chat_id: options.chat_id || TELEGRAM_CHAT_ID,

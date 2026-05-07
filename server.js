@@ -22,7 +22,84 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }, max: 5, connectionTimeoutMillis: 10000,
 });
 
-// ═══════════════════ DB MIGRATION ═══════════════════
+// ═══════════════════ TELEGRAM NOTIFICATIONS ═══════════════════
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8659726749:AAHt5annAdlRTkG_nLwfT8n5HNj5duPJA90';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '7838956683';
+
+async function sendTelegram(text, options = {}) {
+  try {
+    const payload = {
+      chat_id: options.chat_id || TELEGRAM_CHAT_ID,
+      text: text.slice(0, 4096),
+      parse_mode: options.parse_mode || 'HTML',
+      disable_notification: options.silent || false
+    };
+    const data = JSON.stringify(payload);
+    const https = require('https');
+    await new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: 'api.telegram.org',
+        path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+        timeout: 10000
+      }, res => {
+        let body = '';
+        res.on('data', c => body += c);
+        res.on('end', () => resolve(JSON.parse(body)));
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    });
+    return true;
+  } catch (e) {
+    console.error('Telegram send:', e.message);
+    return false;
+  }
+}
+
+// Health check monitor — self-pings /api/health every 5 minutes, alerts on failure
+let healthMonitorInterval = null;
+let lastHealthStatus = true;
+let consecutiveFailures = 0;
+
+function startHealthMonitor() {
+  if (healthMonitorInterval) clearInterval(healthMonitorInterval);
+  healthMonitorInterval = setInterval(async () => {
+    try {
+      const http = require('http');
+      const healthy = await new Promise(resolve => {
+        const req = http.get('http://localhost:3003/api/health', res => {
+          let body = '';
+          res.on('data', c => body += c);
+          res.on('end', () => {
+            try {
+              const d = JSON.parse(body);
+              resolve(d.status === 'healthy' && d.db === true);
+            } catch { resolve(false); }
+          });
+        });
+        req.on('error', () => resolve(false));
+        req.setTimeout(5000, () => { req.destroy(); resolve(false); });
+      });
+
+      if (!healthy) {
+        consecutiveFailures++;
+        if (consecutiveFailures === 1) {
+          await sendTelegram(`🔴 <b>AIMS HEALTH ALERT</b>\n\nServer health check failed at ${new Date().toLocaleTimeString()}\n\nPossible issues:\n• Server down\n• Database disconnected\n• Ollama not responding\n\nCheck: http://localhost:3003/api/health`);
+        } else if (consecutiveFailures % 6 === 0) { // Every 30 min
+          await sendTelegram(`🔴 <b>AIMS STILL DOWN</b> — ${consecutiveFailures} consecutive failures (${Math.round(consecutiveFailures * 5)} minutes)`);
+        }
+      } else if (consecutiveFailures > 0) {
+        await sendTelegram(`🟢 <b>AIMS RECOVERED</b>\n\nServer is healthy again after ${consecutiveFailures} failures (${Math.round(consecutiveFailures * 5)} minutes down)\nTime: ${new Date().toLocaleTimeString()}`);
+        consecutiveFailures = 0;
+      }
+      lastHealthStatus = healthy;
+    } catch {}
+  }, 5 * 60 * 1000); // Every 5 minutes
+  console.log('✓ Health monitor started (Telegram alerts every 5min)');
+}
 async function ensureSchema() {
   try {
     // Check if appointments table has wrong schema
@@ -171,6 +248,7 @@ app.get('/api/admin/providers', (req, res) => {
     success: true,
     providers: {
       llm: { type: 'ollama', status: 'connected', models: [] },
+      telegram: { configured: true, bot: '@Hermescto2bot', chat_id: TELEGRAM_CHAT_ID },
       brevo: { configured: !!process.env.BREVO_API_KEY, account: process.env.BREVO_API_KEY ? 'jasmelacosta@gmail.com' : null },
       deepgram: { configured: !!process.env.DEEPGRAM_API_KEY },
       twilio: { configured: !!process.env.TWILIO_SID }
@@ -317,6 +395,16 @@ app.post('/api/scribe/heartbeat', (req, res) => {
   const s = getSession(req.body.session_id);
   s._lastAccess = Date.now();
   res.json({ alive: true, session_age_min: Math.round((Date.now() - s._created) / 60000) });
+});
+
+// Quick dictation — no patient needed, instant session
+app.post('/api/scribe/quick-start', (req, res) => {
+  const s = createSession();
+  s.patient = { name: 'Quick Note — Unidentified Patient', id: null };
+  s.consultType = 'Urgent Care';
+  s.status = 'listening';
+  s._quickNote = true;
+  res.json({ success: true, session_id: s.id });
 });
 
 // ═══════════════════ AI HELPERS ═══════════════════
@@ -895,7 +983,101 @@ app.get('/api/audit/tomorrow', async (req, res) => {
   }
 });
 
-// Send tomorrow's schedule via Brevo email
+// Send tomorrow's schedule via Telegram
+app.post('/api/audit/telegram', async (req, res) => {
+  try {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dateStr = tomorrow.toISOString().slice(0, 10);
+    const { rows } = await pool.query(
+      `SELECT a.appointment_date, a.reason, p.first_name, p.last_name, p.phone
+       FROM appointments a LEFT JOIN patients p ON a.patient_id = p.id
+       WHERE a.appointment_date::date = $1
+       ORDER BY a.appointment_date`,
+      [dateStr]
+    );
+    const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const dayName = dayNames[tomorrow.getDay()];
+    
+    let msg = `📅 <b>AIMS Daily Schedule — ${dayName}</b>\n\n`;
+    if (rows.length === 0) {
+      msg += '✨ No appointments scheduled for tomorrow.';
+    } else {
+      msg += `<b>${rows.length} appointment${rows.length!==1?'s':''}</b>:\n\n`;
+      for (const a of rows) {
+        const time = a.appointment_date?.toISOString().slice(11, 16) || '--:--';
+        const name = `${a.first_name || ''} ${a.last_name || ''}`.trim();
+        msg += `⏰ <b>${time}</b> — ${name}\n   ${a.reason || 'No reason'}${a.phone ? ' • ' + a.phone : ''}\n\n`;
+      }
+    }
+    msg += `<i>Sent ${new Date().toLocaleTimeString()} • AIMS EHR</i>`;
+    
+    await sendTelegram(msg);
+    res.json({ success: true, message: `Sent tomorrow's schedule (${rows.length} appointments) to Telegram` });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Notification test endpoint
+app.post('/api/admin/notify', async (req, res) => {
+  try {
+    const { channel, message } = req.body;
+    const msg = message || '🧪 <b>AIMS Notification Test</b>\n\nIf you see this, Telegram alerts are working! ✅';
+    
+    if (channel === 'telegram' || !channel) {
+      await sendTelegram(msg);
+      res.json({ success: true, channel: 'telegram' });
+    } else if (channel === 'email') {
+      // Fallback to email via Brevo
+      const brevoApiKey = process.env.BREVO_API_KEY;
+      if (!brevoApiKey) return res.status(500).json({ error: 'BREVO_API_KEY not configured' });
+      const https = require('https');
+      const data = JSON.stringify({
+        to: [{ email: 'jasmelacosta@gmail.com', name: 'Jasmel Acosta' }],
+        subject: 'AIMS Notification Test',
+        htmlContent: `<p>${msg.replace(/<[^>]+>/g,'')}</p>`,
+        sender: { email: 'jasmelacosta@gmail.com', name: 'AIMS EHR' }
+      });
+      await new Promise((resolve, reject) => {
+        const req = https.request({ hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST', headers: { 'api-key': brevoApiKey, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }, timeout: 15000 }, res => { let b=''; res.on('data',c=>b+=c); res.on('end', ()=>resolve()); });
+        req.on('error', reject);
+        req.write(data); req.end();
+      });
+      res.json({ success: true, channel: 'email' });
+    }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Red flag summary via Telegram
+app.post('/api/admin/redflags/summary', async (req, res) => {
+  try {
+    const critical = redFlagLog.filter(f => f.severity === 'critical');
+    const warnings = redFlagLog.filter(f => f.severity === 'warning');
+    
+    let msg = `🔴 <b>AIMS Red Flag Summary</b>\n\n`;
+    msg += `📊 Today: ${critical.length} critical, ${warnings.length} warnings\n`;
+    msg += `📁 Total logged: ${redFlagLog.length}\n\n`;
+    
+    if (critical.length) {
+      msg += '<b>🔴 CRITICAL:</b>\n';
+      critical.slice(-5).forEach(f => msg += `• ${f.message} (${f.patient || '?'})\n`);
+      msg += '\n';
+    }
+    if (warnings.length) {
+      msg += '<b>🟡 WARNINGS:</b>\n';
+      warnings.slice(-3).forEach(f => msg += `• ${f.message}\n`);
+    }
+    if (!critical.length && !warnings.length) msg += '✅ No red flags — all clear!';
+    
+    await sendTelegram(msg);
+    res.json({ success: true, message: `Sent red flag summary` });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 app.post('/api/audit/email', async (req, res) => {
   try {
     const { recipient } = req.body;
@@ -994,6 +1176,7 @@ app.get('/api/health', async (req, res) => {
 
 app.listen(PORT, async () => {
   await ensureSchema();
+  startHealthMonitor();
   console.log(`\n🏥 Consult Room — http://localhost:${PORT}`);
-  console.log(`   Scribe | Dual-Agent Review | Smart Assistant | EHR\n`);
+  console.log(`   Scribe | Multi-Agent | Admin Panel | Telegram Alerts\n`);
 });

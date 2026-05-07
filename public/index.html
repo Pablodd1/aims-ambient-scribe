@@ -34,6 +34,27 @@ h2{font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.08em
 
 .btn{padding:9px 16px;border-radius:7px;border:none;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;letter-spacing:-0.01em;display:inline-flex;align-items:center;gap:6px}
 .btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.3)}
+
+/* Quick Dictate Widget */
+.float-btn{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:#000;border:none;font-size:22px;cursor:pointer;z-index:400;box-shadow:0 4px 20px rgba(74,222,128,.4);transition:all .2s;display:flex;align-items:center;justify-content:center}
+.float-btn:hover{transform:scale(1.1)}
+.quick-overlay{display:none;position:fixed;inset:0;background:rgba(5,5,16,.95);z-index:500;flex-direction:column}
+.quick-overlay.show{display:flex}
+.quick-header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--border)}
+.quick-header h3{font-size:13px;color:var(--accent)}
+.quick-body{flex:1;display:flex;overflow:hidden}
+.quick-soap{flex:1;padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.quick-soap textarea{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text);font-size:12px;line-height:1.6;resize:none;outline:none;font-family:inherit}
+.quick-side{width:280px;padding:14px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;border-left:1px solid var(--border)}
+.quick-footer{display:flex;gap:8px;padding:10px 20px;background:var(--card);border-top:1px solid var(--border)}
+.consent-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:600;justify-content:center;align-items:center}
+.consent-overlay.show{display:flex}
+.consent-box{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:32px;max-width:420px;text-align:center}
+.consent-box .icon{font-size:40px;margin-bottom:12px}
+.consent-box h2{font-size:15px;color:var(--accent);margin-bottom:8px}
+.consent-box p{font-size:11px;color:var(--sub);line-height:1.6;margin-bottom:16px}
+.consent-box .reminder{background:rgba(251,191,36,.1);border:1px solid var(--warn);border-radius:8px;padding:10px;font-size:11px;color:var(--warn);margin-bottom:16px}
+
 .btn:disabled{opacity:.35;cursor:not-allowed}
 .btn-p{background:var(--accent);color:#000}
 .btn-b{background:var(--accent2);color:#000}
@@ -127,6 +148,48 @@ textarea{resize:vertical;line-height:1.5}
 </div>
 
 <div class="main" id="mainContent"></div>
+<!-- Quick Dictate Floating Button -->
+<button class="float-btn" onclick="openQuickDictate()" title="Quick Dictation">🎤</button>
+
+<!-- Consent Reminder -->
+<div class="consent-overlay" id="consentOverlay">
+  <div class="consent-box">
+    <div class="icon">⚠️</div>
+    <h2>Recording Consent Reminder</h2>
+    <p>Please inform the patient that this consultation is being recorded for AI-assisted documentation purposes.</p>
+    <div class="reminder">🗣️ "I'm using an AI assistant to help document our visit today. Is that okay with you?"</div>
+    <button class="btn btn-p" style="width:100%;padding:12px" onclick="confirmConsent()">✓ Patient Consented — Begin Recording</button>
+    <button class="btn btn-g" style="width:100%;margin-top:8px" onclick="cancelQuickDictate()">Cancel</button>
+  </div>
+</div>
+
+<!-- Quick Dictation Overlay -->
+<div class="quick-overlay" id="quickOverlay">
+  <div class="quick-header">
+    <h3>⚡ Quick Dictation — No Patient Linked</h3>
+    <button class="btn btn-g" onclick="closeQuickDictate()">✕ Close</button>
+  </div>
+  <div class="quick-body">
+    <div class="quick-soap">
+      <div class="soap-box"><div class="label">S — Subjective</div><textarea id="qs" placeholder="Speaking..."></textarea></div>
+      <div class="soap-box"><div class="label">O — Objective</div><textarea id="qo" placeholder="..."></textarea></div>
+      <div class="soap-box"><div class="label">A — Assessment</div><textarea id="qa" placeholder="..."></textarea></div>
+      <div class="soap-box"><div class="label">P — Plan</div><textarea id="qp" placeholder="..."></textarea></div>
+    </div>
+    <div class="quick-side">
+      <button class="rec-btn" id="qRecBtn" onclick="qToggleMic()">🎤 Start Listening</button>
+      <div class="live-text" id="qTranscript"></div>
+      <button class="btn btn-p" style="width:100%;margin-top:auto" onclick="qFinalize()">✓ Finalize & Copy</button>
+      <button class="btn btn-b" style="width:100%" id="qDownloadBtn" disabled onclick="qDownload()">⬇ Download Note</button>
+      <div style="font-size:9px;color:var(--warn);margin-top:8px;text-align:center">⚠️ Red Flag: No patient identification</div>
+      <div style="font-size:9px;color:var(--sub);margin-top:4px;text-align:center">This note will not be linked to a patient record</div>
+    </div>
+  </div>
+  <div class="quick-footer">
+    <span style="font-size:10px;color:var(--sub);flex:1" id="qStatus">Ready</span>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- Intake Modal -->
@@ -482,10 +545,23 @@ async function loadProviders(){
   try{const r=await fetch('/api/admin/providers');const d=await r.json();
     document.getElementById('providerStatus').innerHTML=`
       <div style="padding:4px 0">🤖 LLM: <span style="color:var(--accent)">${d.providers.llm.type}</span> — ${d.providers.llm.status}</div>
-      <div style="padding:4px 0">📧 Brevo: <span style="color:${d.providers.brevo.configured?'var(--accent)':'var(--danger)'}">${d.providers.brevo.configured?'✓ Connected ('+d.providers.brevo.account+')':'✗ Not configured'}</span></div>
-      <div style="padding:4px 0">🎙 Deepgram: <span style="color:${d.providers.deepgram.configured?'var(--accent)':'var(--sub)'}">${d.providers.deepgram.configured?'✓ Configured':'○ Available for setup'}</span></div>
-      <div style="padding:4px 0">📱 Twilio: <span style="color:${d.providers.twilio.configured?'var(--accent)':'var(--sub)'}">${d.providers.twilio.configured?'✓ Configured':'○ Available for setup'}</span></div>`;
+      <div style="padding:4px 0">💬 Telegram: <span style="color:${d.providers.telegram?.configured?'var(--accent)':'var(--danger)'}">${d.providers.telegram?.configured?'✓ Connected ('+(d.providers.telegram?.bot||'')+')':'✗ Not configured'}</span></div>
+      <div style="padding:4px 0">📧 Brevo: <span style="color:${d.providers.brevo.configured?'var(--accent)':'var(--sub)'}">${d.providers.brevo.configured?'✓ Connected ('+d.providers.brevo.account+')':'○ Backup only'}</span></div>
+      <div style="padding:4px 0">🎙 Deepgram: <span style="color:${d.providers.deepgram.configured?'var(--accent)':'var(--sub)'}">${d.providers.deepgram.configured?'✓ Configured':'○ Available'}</span></div>
+      <div style="padding:4px 0">📱 Twilio: <span style="color:${d.providers.twilio.configured?'var(--accent)':'var(--sub)'}">${d.providers.twilio.configured?'✓ Configured':'○ Available'}</span></div>
+      <div style="margin-top:12px;display:flex;gap:6px">
+        <button class="btn btn-s" style="padding:4px 10px;font-size:10px" onclick="testNotify('telegram')">🧪 Test Telegram</button>
+        <button class="btn btn-s" style="padding:4px 10px;font-size:10px" onclick="testNotify('email')">📧 Test Email</button>
+      </div>`;
   }catch(e){}
+}
+
+async function testNotify(channel){
+  try{
+    const r=await fetch('/api/admin/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel,message:`🧪 <b>AIMS Notification Test</b>\n\nChannel: ${channel}\nTime: ${new Date().toLocaleString()}\n\n✅ All systems operational!\n\n• Server: Running\n• Database: Connected\n• Ollama: Active\n• Alerts: Working`})});
+    const d=await r.json();
+    toast(`Sent via ${d.channel} ✓`);
+  }catch(e){toast('Failed')}
 }
 
 async function loadRedFlags(){
@@ -579,6 +655,58 @@ function openConsultForPatient(id,name){
 }
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)}
+
+// ═══════ QUICK DICTATION WIDGET ═══════
+let qSessionId=null,qIsRecording=false,qRecognition=null,qTranscript='',qPollTimer=null;
+
+async function openQuickDictate(){
+  document.getElementById('consentOverlay').classList.add('show');
+}
+function cancelQuickDictate(){
+  document.getElementById('consentOverlay').classList.remove('show');
+}
+async function confirmConsent(){
+  document.getElementById('consentOverlay').classList.remove('show');
+  document.getElementById('quickOverlay').classList.add('show');
+  const r=await fetch('/api/scribe/quick-start',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  const d=await r.json();qSessionId=d.session_id;
+  qStartPolling();
+  qStartMic();
+}
+function closeQuickDictate(){
+  if(qIsRecording)qStopMic();
+  if(qPollTimer)clearInterval(qPollTimer);
+  document.getElementById('quickOverlay').classList.remove('show');
+  // Reset
+  qTranscript='';['qs','qo','qa','qp'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('qTranscript').textContent='';
+  document.getElementById('qDownloadBtn').disabled=true;
+}
+function qToggleMic(){qIsRecording?qStopMic():qStartMic()}
+function qStartMic(){
+  if(!('webkitSpeechRecognition'in window)){toast('Use Chrome');return}
+  const SR=webkitSpeechRecognition;qRecognition=new SR();qRecognition.continuous=true;qRecognition.interimResults=true;qRecognition.lang='en-US';
+  qRecognition.onresult=async e=>{let f='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)f+=e.results[i][0].transcript+' ';if(f){qTranscript+=f;document.getElementById('qTranscript').textContent=qTranscript;fetch('/api/scribe/listen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:qSessionId,text:f})}).catch(()=>{})}};
+  qRecognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')qStopMic()};
+  qRecognition.onend=()=>{if(qIsRecording)qRecognition.start()};
+  qRecognition.start();qIsRecording=true;document.getElementById('qRecBtn').textContent='⏹ Stop';document.getElementById('qRecBtn').className='rec-btn on';document.getElementById('qStatus').textContent='🎤 Listening...';
+}
+function qStopMic(){qIsRecording=false;if(qRecognition){qRecognition.stop();qRecognition=null}document.getElementById('qRecBtn').textContent='🎤 Start Listening';document.getElementById('qRecBtn').className='rec-btn';document.getElementById('qStatus').textContent='Paused'}
+function qStartPolling(){if(qPollTimer)clearInterval(qPollTimer);qPollTimer=setInterval(async()=>{try{const r=await fetch('/api/scribe/soap?session_id='+qSessionId);const d=await r.json();if(d.soap){['qs','qo','qa','qp'].forEach((k,i)=>{const key=['subjective','objective','assessment','plan'][i];const el=document.getElementById(k);if(el&&document.activeElement!==el&&d.soap[key])el.value=d.soap[key]})}}catch(e){}},4000)}
+async function qFinalize(){
+  if(qIsRecording)qStopMic();
+  document.getElementById('qStatus').textContent='Finalizing...';
+  await fetch('/api/scribe/finalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:qSessionId})});
+  // Auto-sign
+  await fetch('/api/scribe/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:qSessionId,doctor_name:'Quick Note',license:'UNIDENTIFIED'})});
+  document.getElementById('qDownloadBtn').disabled=false;
+  document.getElementById('qStatus').textContent='✅ Ready — download or copy';
+  // Copy to clipboard
+  const note=['S: '+document.getElementById('qs').value,'O: '+document.getElementById('qo').value,'A: '+document.getElementById('qa').value,'P: '+document.getElementById('qp').value].join('\n\n');
+  try{navigator.clipboard.writeText(note);toast('Note copied! ⚠️ No patient ID')}catch(e){}
+}
+function qDownload(){window.open('/api/scribe/download?session_id='+qSessionId,'_blank')}
+
 loadDashboard();
 </script>
 </body>

@@ -122,6 +122,8 @@ textarea{resize:vertical;line-height:1.5}
   <div class="nav-divider"></div>
   <div class="nav-item" onclick="navTo('intake')"><span class="icon">📋</span>Patient Intake</div>
   <div class="nav-item" onclick="navTo('consult')"><span class="icon">🎤</span>Consult Room</div>
+  <div class="nav-divider"></div>
+  <div class="nav-item" onclick="navTo('admin')"><span class="icon">⚙️</span>Admin Panel</div>
 </div>
 
 <div class="main" id="mainContent"></div>
@@ -161,6 +163,7 @@ function navTo(page){
   else if(page==='patients')loadPatients();
   else if(page==='intake')loadIntakePage();
   else if(page==='consult')loadConsult();
+  else if(page==='admin')loadAdmin();
 }
 
 // ═══════ DASHBOARD ═══════
@@ -357,7 +360,12 @@ async function loadConsult(){
             <button class="btn btn-b" onclick="runReview('clinical')">🩺 Clinical</button>
             <button class="btn btn-v" onclick="runReview('billing')">💰 Billing</button>
           </div>
-          <div class="row-btns"><button class="btn btn-g" onclick="searchRAG()">🔬 RAG Search</button></div>
+          <div class="row-btns">
+            <button class="btn btn-v" onclick="generateEHR()" id="genEHRBtn">🤖 Generate EHR</button>
+            <button class="btn btn-g" onclick="searchRAG()">🔬 RAG</button>
+          </div>
+          <div id="codeResults" style="font-size:10px;margin-top:4px"></div>
+          <div id="patientSummary" style="display:none;background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);padding:10px;margin-top:6px"></div>
           <div id="reviewResult" style="font-size:11px;color:var(--sub)"></div>
           <div class="rag-box" id="ragResults" style="display:none"></div>
           <div id="sigPanel" style="display:none">
@@ -401,6 +409,138 @@ async function signNote(){await fetch('/api/scribe/sign',{method:'POST',headers:
 function downloadNote(){window.open('/api/scribe/download?session_id='+sessionId,'_blank')}
 function resetConsult(){if(isRecording)stopMic();['s','o','a','p'].forEach(k=>{const el=document.getElementById('soap-'+k);if(el)el.value=''});fetch('/api/scribe/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient:selectedPatient})}).then(r=>r.json()).then(d=>{sessionId=d.session_id});toast('New consult')}
 async function voiceCommand(){if(!('webkitSpeechRecognition'in window)){toast('Use Chrome');return}const SR=webkitSpeechRecognition;const r=new SR();r.continuous=false;r.interimResults=false;r.lang='en-US';toast('Listening...');r.onresult=e=>{const cmd=e.results[0][0].transcript.toLowerCase();toast(cmd);if(cmd.includes('start'))startMic();else if(cmd.includes('stop'))stopMic();else if(cmd.includes('review'))runReview('clinical');else if(cmd.includes('billing'))runReview('billing');else if(cmd.includes('finalize'))finalize()};r.start()}
+
+// ═══════ MULTI-AGENT EHR GENERATION ═══════
+async function generateEHR(){
+  const btn=document.getElementById('genEHRBtn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Generating...';}
+  try{
+    const body={session_id:sessionId,transcript:document.getElementById('micTranscript')?.textContent||'',visit_meta:{type:document.getElementById('consultType')?.value||'Primary Care'},specialty:document.getElementById('consultType')?.value||'Primary Care'};
+    const r=await fetch('/api/scribe/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.success){
+      // Fill SOAP from generated EHR
+      if(d.ehr){
+        ['s','o','a','p'].forEach((k,i)=>{const key=['subjective','objective','assessment','plan'][i];const el=document.getElementById('soap-'+k);let content='';if(key==='subjective')content=[d.ehr.note_sections?.ChiefComplaint,d.ehr.note_sections?.HPI,d.ehr.note_sections?.ROS,d.ehr.note_sections?.Medications,d.ehr.note_sections?.Allergies,d.ehr.note_sections?.PMH].filter(Boolean).join('\n\n');else if(key==='objective')content=[d.ehr.note_sections?.PhysicalExam,d.ehr.note_sections?.ROM_Testing,d.ehr.note_sections?.OrthopedicTests,d.ehr.note_sections?.MentalStatusExam].filter(Boolean).join('\n\n');else if(key==='assessment')content=d.ehr.note_sections?.Assessment||'';else if(key==='plan')content=d.ehr.note_sections?.Plan||'';if(el&&content)el.value=content;});
+        // Show codes
+        if(d.codes){
+          let codesHTML='';
+          if(d.codes.icd10?.length)codesHTML+='<div style="margin-top:8px"><strong style="color:var(--accent3);font-size:10px">ICD-10:</strong> '+d.codes.icd10.map(c=>`<span style="background:rgba(167,139,250,.1);padding:1px 6px;border-radius:4px;font-size:10px;margin:0 2px">${c.code}: ${c.description}</span>`).join('')+'</div>';
+          if(d.codes.cpt?.length)codesHTML+='<div style="margin-top:4px"><strong style="color:var(--accent2);font-size:10px">CPT:</strong> '+d.codes.cpt.map(c=>`<span style="background:rgba(96,165,250,.1);padding:1px 6px;border-radius:4px;font-size:10px;margin:0 2px">${c.code}: ${c.description}</span>`).join('')+'</div>';
+          const codeEl=document.getElementById('codeResults');if(codeEl)codeEl.innerHTML=codesHTML;
+        }
+      }
+      // Show patient summary
+      if(d.patient_summary){const psEl=document.getElementById('patientSummary');if(psEl){psEl.style.display='block';psEl.innerHTML='<strong style="font-size:10px;color:var(--accent)">📋 Patient Summary (8th-grade)</strong><p style="font-size:11px;margin:6px 0 0;color:var(--text)">'+d.patient_summary+'</p>';}}
+      // Show red flags
+      if(d.red_flags?.length){
+        let flagsHTML='<div style="margin-top:4px"><strong style="font-size:9px;color:var(--warn)">⚠️ Red Flags:</strong>';
+        d.red_flags.forEach(f=>{const colors={critical:'#f87171',warning:'#fbbf24',info:'#60a5fa'};flagsHTML+=`<div style="font-size:9px;color:${colors[f.severity]||'#888'};margin:2px 0">[${f.severity}] ${f.message}</div>`;});
+        flagsHTML+='</div>';
+        const rfEl=document.getElementById('reviewResult');if(rfEl)rfEl.innerHTML+=flagsHTML;
+      }
+      toast('EHR Generated ✓');
+      if(btn){btn.disabled=false;btn.textContent='🤖 Generate EHR';}
+    }
+  }catch(e){if(btn){btn.disabled=false;btn.textContent='🤖 Generate EHR'}toast('Error')}
+}
+
+// ═══════ ADMIN PANEL ═══════
+async function loadAdmin(){
+  document.getElementById('mainContent').innerHTML=`<div class="page active"><div class="page-header"><h1>⚙️ Admin Panel</h1></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card"><h2>Prompt Templates</h2><div id="promptList" style="font-size:11px">Loading...</div>
+        <div style="display:flex;gap:6px;margin-top:12px"><button class="btn btn-p" onclick="newPrompt()">+ New Template</button><button class="btn btn-g" onclick="loadAdmin()">↻ Refresh</button></div>
+      </div>
+      <div class="card"><h2>Provider Status</h2><div id="providerStatus" style="font-size:11px">Loading...</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+      <div class="card"><h2>🔴 Red Flag Audit Log</h2><div id="redFlagPanel" style="font-size:11px;max-height:300px;overflow-y:auto">Loading...</div></div>
+      <div class="card"><h2>📊 System Health</h2><div id="sysHealth" style="font-size:11px">Loading...</div></div>
+    </div>
+    <!-- Prompt Editor Modal placeholder -->
+    <div id="promptEditor" style="display:none"></div>
+  </div>`;
+  loadPromptList();loadProviders();loadRedFlags();loadSysHealth();
+}
+
+async function loadPromptList(){
+  try{const r=await fetch('/api/admin/prompts');const d=await r.json();
+    document.getElementById('promptList').innerHTML=d.templates?.map(t=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+        <div><span style="color:${t.active?'var(--accent)':'var(--sub)'};font-weight:600">${t.name}</span>
+          <span style="font-size:9px;color:var(--sub);margin-left:8px">v${t.version} • ${(t.specialties||[]).slice(0,3).join(', ')}</span></div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-s" style="padding:3px 8px;font-size:9px" onclick="editPrompt('${t.id}')">Edit</button>
+          <button class="btn" style="padding:3px 8px;font-size:9px;background:${t.active?'rgba(248,113,113,.1)':'rgba(74,222,128,.1)'};color:${t.active?'var(--danger)':'var(--accent)'}" onclick="togglePrompt('${t.id}')">${t.active?'Disable':'Enable'}</button>
+        </div>
+      </div>`).join('')||'<div style="color:var(--sub)">No templates</div>';
+  }catch(e){}
+}
+
+async function loadProviders(){
+  try{const r=await fetch('/api/admin/providers');const d=await r.json();
+    document.getElementById('providerStatus').innerHTML=`
+      <div style="padding:4px 0">🤖 LLM: <span style="color:var(--accent)">${d.providers.llm.type}</span> — ${d.providers.llm.status}</div>
+      <div style="padding:4px 0">📧 Brevo: <span style="color:${d.providers.brevo.configured?'var(--accent)':'var(--danger)'}">${d.providers.brevo.configured?'✓ Connected ('+d.providers.brevo.account+')':'✗ Not configured'}</span></div>
+      <div style="padding:4px 0">🎙 Deepgram: <span style="color:${d.providers.deepgram.configured?'var(--accent)':'var(--sub)'}">${d.providers.deepgram.configured?'✓ Configured':'○ Available for setup'}</span></div>
+      <div style="padding:4px 0">📱 Twilio: <span style="color:${d.providers.twilio.configured?'var(--accent)':'var(--sub)'}">${d.providers.twilio.configured?'✓ Configured':'○ Available for setup'}</span></div>`;
+  }catch(e){}
+}
+
+async function loadRedFlags(){
+  try{const r=await fetch('/api/admin/redflags');const d=await r.json();
+    const colors={critical:'#f87171',warning:'#fbbf24',info:'#60a5fa'};
+    document.getElementById('redFlagPanel').innerHTML='<div style="margin-bottom:8px;font-weight:700">Total: '+d.count+' flags logged</div>'
+      +d.flags?.slice().reverse().map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="color:${colors[f.severity]||'#888'};font-weight:600;font-size:10px">[${f.severity}]</span>
+        <span style="font-size:10px;margin-left:4px">${f.message||''}</span>
+        <span style="font-size:8px;color:var(--sub);margin-left:6px">${f.patient||''} • ${f.timestamp?.slice(0,16)||''}</span></div>`).join('')||'<div style="color:var(--sub)">No red flags</div>';
+  }catch(e){}
+}
+
+async function loadSysHealth(){
+  try{const r=await fetch('/api/health');const d=await r.json();
+    document.getElementById('sysHealth').innerHTML=`
+      <div>Status: <span style="color:var(--accent)">✓ Healthy</span></div>
+      <div>DB: <span style="color:${d.db?'var(--accent)':'var(--danger)'}">${d.db?'✓ Connected':'✗ Disconnected'}</span></div>
+      <div style="margin-top:8px"><strong>Loaded Models:</strong></div>
+      ${(d.models||[]).map(m=>`<div style="font-size:10px;color:var(--sub)">• ${m}</div>`).join('')}`;
+  }catch(e){}
+}
+
+async function editPrompt(id){
+  try{const r=await fetch('/api/admin/prompts/'+id);const d=await r.json();const t=d.template;
+    showPromptEditor(t.id,t.name,t.system,t.template,t.specialties,t.active);
+  }catch(e){toast('Error loading')}
+}
+function newPrompt(){showPromptEditor('','','','',['Primary Care'],true)}
+function showPromptEditor(id,name,system,templ,specialties,active){
+  const specStr=(specialties||['Primary Care']).join(', ');
+  const html=`<div class="modal-overlay show" id="promptEditorModal"><div class="modal" style="width:700px;max-height:90vh">
+    <h3>${id?'Edit':'New'} Prompt Template</h3>
+    <div class="row"><input placeholder="Template ID (e.g. chiro-pip)" id="peId" value="${id||''}" ${id?'disabled':''}><input placeholder="Display Name" id="peName" value="${name||''}"></div>
+    <input placeholder="Specialties (comma-separated)" id="peSpec" value="${specStr}">
+    <div style="font-size:10px;color:var(--sub)">System Prompt (with {{TRANSCRIPT}}, {{VISIT_META}}, {{SPECIALTY_HINT}} variables)</div>
+    <textarea id="peSystem" style="min-height:200px;font-size:11px;font-family:monospace">${system||''}</textarea>
+    <div style="font-size:10px;color:var(--sub)">Note Template (shown to doctor as starting point)</div>
+    <textarea id="peTemplate" style="min-height:100px;font-size:11px">${templ||''}</textarea>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-p" style="flex:1" onclick="savePrompt()">💾 Save</button>
+      <button class="btn btn-g" onclick="closePromptEditor()">Cancel</button>
+    </div>
+  </div></div>`;
+  const existing=document.getElementById('promptEditorModal');if(existing)existing.remove();
+  document.getElementById('mainContent').insertAdjacentHTML('beforeend',html);
+}
+async function savePrompt(){
+  const body={id:document.getElementById('peId').value,name:document.getElementById('peName').value,system:document.getElementById('peSystem').value,template:document.getElementById('peTemplate').value,specialties:document.getElementById('peSpec').value.split(',').map(s=>s.trim()).filter(Boolean),active:true};
+  if(!body.id||!body.name)return toast('ID and Name required');
+  await fetch('/api/admin/prompts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  closePromptEditor();loadPromptList();toast('Saved');
+}
+function closePromptEditor(){const el=document.getElementById('promptEditorModal');if(el)el.remove()}
+async function togglePrompt(id){await fetch('/api/admin/prompts/'+id+'/toggle',{method:'PATCH'});toast('Toggled');loadPromptList()}
 
 // ═══════ MODALS ═══════
 function openModal(id){

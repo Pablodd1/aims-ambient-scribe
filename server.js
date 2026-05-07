@@ -74,6 +74,206 @@ async function ensureSchema() {
   }
 }
 
+// ═══════════════════ PROMPT ENGINE ═══════════════════
+const PROMPTS_DIR = path.join(__dirname, 'prompts');
+let promptTemplates = {};
+let redFlagLog = []; // In-memory red flag audit log
+
+function loadPromptTemplates() {
+  try {
+    const files = fs.readdirSync(PROMPTS_DIR).filter(f => f.endsWith('.json'));
+    promptTemplates = {};
+    for (const f of files) {
+      try {
+        const tmpl = JSON.parse(fs.readFileSync(path.join(PROMPTS_DIR, f), 'utf8'));
+        promptTemplates[tmpl.id] = tmpl;
+      } catch (e) { console.error(`Prompt ${f}:`, e.message); }
+    }
+    console.log(`✓ ${Object.keys(promptTemplates).length} prompt templates loaded`);
+  } catch (e) { console.error('Prompt load:', e.message); }
+}
+loadPromptTemplates();
+
+// Get active prompt for a specialty
+function getActivePrompt(specialty) {
+  // First try exact specialty match
+  for (const [id, tmpl] of Object.entries(promptTemplates)) {
+    if (tmpl.active && tmpl.specialties?.includes(specialty)) return tmpl;
+  }
+  // Fall back to default
+  for (const [id, tmpl] of Object.entries(promptTemplates)) {
+    if (tmpl.active && (tmpl.id === 'default' || tmpl.specialties?.includes('General'))) return tmpl;
+  }
+  return null;
+}
+
+// Inject variables into prompt template
+function injectPromptVariables(template, vars) {
+  let result = template;
+  result = result.replace(/\{\{TRANSCRIPT\}\}/g, vars.transcript || '');
+  result = result.replace(/\{\{VISIT_META\}\}/g, typeof vars.visit_meta === 'string' ? vars.visit_meta : JSON.stringify(vars.visit_meta || {}));
+  result = result.replace(/\{\{SPECIALTY_HINT\}\}/g, vars.specialty || 'Primary Care');
+  result = result.replace(/\{\{ISO_8601\}\}/g, new Date().toISOString());
+  return result;
+}
+
+// ═══════════════════ ADMIN API ═══════════════════
+app.get('/api/admin/prompts', (req, res) => {
+  const list = Object.values(promptTemplates).map(t => ({
+    id: t.id, name: t.name, version: t.version, active: t.active,
+    specialties: t.specialties, system_length: (t.system||'').length
+  }));
+  res.json({ success: true, templates: list });
+});
+
+app.get('/api/admin/prompts/:id', (req, res) => {
+  const tmpl = promptTemplates[req.params.id];
+  if (!tmpl) return res.status(404).json({ error: 'Template not found' });
+  res.json({ success: true, template: tmpl });
+});
+
+app.post('/api/admin/prompts', (req, res) => {
+  try {
+    const { id, name, system, template: templ, specialties, active } = req.body;
+    if (!id || !name) return res.status(400).json({ error: 'id and name required' });
+    const existing = promptTemplates[id];
+    const tmpl = {
+      id, name,
+      version: existing ? (existing.version || 1) + 1 : 1,
+      active: active !== false,
+      specialties: specialties || ['Primary Care'],
+      system: system || '',
+      template: templ || ''
+    };
+    fs.writeFileSync(path.join(PROMPTS_DIR, `${id}.json`), JSON.stringify(tmpl, null, 2));
+    promptTemplates[id] = tmpl;
+    res.json({ success: true, template: tmpl, message: existing ? `Updated to v${tmpl.version}` : 'Created' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/admin/prompts/:id/toggle', (req, res) => {
+  const tmpl = promptTemplates[req.params.id];
+  if (!tmpl) return res.status(404).json({ error: 'Not found' });
+  tmpl.active = !tmpl.active;
+  fs.writeFileSync(path.join(PROMPTS_DIR, `${tmpl.id}.json`), JSON.stringify(tmpl, null, 2));
+  res.json({ success: true, active: tmpl.active });
+});
+
+app.get('/api/admin/prompts/active/:specialty', (req, res) => {
+  const tmpl = getActivePrompt(req.params.specialty);
+  if (!tmpl) return res.status(404).json({ error: 'No active template for this specialty' });
+  res.json({ success: true, template: { id: tmpl.id, name: tmpl.name, system: tmpl.system, template: tmpl.template } });
+});
+
+// Provider config
+app.get('/api/admin/providers', (req, res) => {
+  res.json({
+    success: true,
+    providers: {
+      llm: { type: 'ollama', status: 'connected', models: [] },
+      brevo: { configured: !!process.env.BREVO_API_KEY, account: process.env.BREVO_API_KEY ? 'jasmelacosta@gmail.com' : null },
+      deepgram: { configured: !!process.env.DEEPGRAM_API_KEY },
+      twilio: { configured: !!process.env.TWILIO_SID }
+    }
+  });
+});
+
+// Red flag audit log
+app.get('/api/admin/redflags', (req, res) => {
+  res.json({ success: true, count: redFlagLog.length, flags: redFlagLog.slice(-50) });
+});
+
+// ═══════════════════ MULTI-AGENT GENERATION ═══════════════════
+app.post('/api/scribe/generate', async (req, res) => {
+  try {
+    const { session_id, transcript, visit_meta, specialty } = req.body;
+    const s = session_id ? getSession(session_id) : null;
+    const consultType = specialty || s?.consultType || 'Primary Care';
+    
+    // Load the active prompt template
+    const promptTmpl = getActivePrompt(consultType);
+    if (!promptTmpl) return res.status(500).json({ error: 'No prompt template configured' });
+
+    // Build the system prompt with injected variables
+    const systemPrompt = injectPromptVariables(promptTmpl.system, {
+      transcript: transcript || s?.transcript?.slice(-4000) || '',
+      visit_meta: visit_meta || { type: consultType, provider: s?.signature?.doctor_name || 'Provider' },
+      specialty: consultType
+    });
+
+    const userPrompt = `TRANSCRIPT:\n${transcript || s?.transcript?.slice(-4000) || 'No transcript yet'}\n\nGenerate the EHR JSON output.`;
+
+    // === AGENT 1: Main Scribe + Coder (single pass) ===
+    const result = await ollamaChat('llama3.1:8b', [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], 180000);
+
+    // Try to parse JSON from the AI output
+    let ehrData = null;
+    try {
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) ehrData = JSON.parse(jsonMatch[0]);
+    } catch (parseErr) {
+      console.error('JSON parse:', parseErr.message);
+    }
+
+    // === AGENT 2: Auditor — Red Flag Detection (non-blocking, fire-and-forget) ===
+    let auditFlags = [];
+    if (ehrData?.ehr_payload) {
+      ollamaChat('qwen2.5-medical:latest', [
+        { role: 'system', content: `You are a MEDICAL DOCUMENTATION AUDITOR. Review this EHR output for red flags and compliance gaps. Return ONLY a JSON array of flags: [{"severity":"critical|warning|info","category":"...","message":"...","recommendation":"..."}]` },
+        { role: 'user', content: `Specialty: ${consultType}\nEHR Output:\n${JSON.stringify(ehrData.ehr_payload, null, 2)}\n\nFlag all documentation gaps, coding errors, and compliance issues.` }
+      ], 180000).then(auditResult => {
+        try {
+          const flagJson = auditResult.match(/\[[\s\S]*\]/);
+          if (flagJson) auditFlags = JSON.parse(flagJson[0]);
+        } catch {}
+        for (const f of auditFlags) {
+          redFlagLog.push({ timestamp: new Date().toISOString(), patient: s?.patient?.name || 'Unknown', specialty: consultType, ...f });
+        }
+        if (redFlagLog.length > 500) redFlagLog = redFlagLog.slice(-500);
+      }).catch(() => {});
+    }
+
+    // === AGENT 3: Patient Summary (8th-grade level) ===
+    let patientSummary = null;
+    if (ehrData?.ehr_payload?.note_sections) {
+      try {
+        const summaryPrompt = [
+          { role: 'system', content: 'You are a patient educator. Summarize this medical visit in 2-3 sentences at an 8th-grade reading level. Use simple words. Focus on what happened, what was found, and what to do next. Be warm and encouraging.' },
+          { role: 'user', content: `Visit notes:\n${JSON.stringify(ehrData.ehr_payload.note_sections)}\n\nAssessment: ${JSON.stringify(ehrData.ehr_payload.note_sections?.Assessment || '')}\nPlan: ${JSON.stringify(ehrData.ehr_payload.note_sections?.Plan || '')}\n\nWrite a patient-friendly summary.` }
+        ];
+        patientSummary = await ollamaChat('llama3.1:8b', summaryPrompt, 60000);
+      } catch {}
+    }
+
+    // Update session if exists
+    if (s && ehrData?.ehr_payload?.note_sections) {
+      const ns = ehrData.ehr_payload.note_sections;
+      s.soap.subjective = [ns.ChiefComplaint, ns.HPI, ns.ROS, ns.Medications, ns.Allergies, ns.PMH].filter(Boolean).join('\n\n');
+      s.soap.objective = [ns.PhysicalExam, ns.ROM_Testing, ns.OrthopedicTests].filter(Boolean).join('\n\n');
+      s.soap.assessment = ns.Assessment || '';
+      s.soap.plan = ns.Plan || '';
+      s.redFlags = { critical: auditFlags.filter(f=>f.severity==='critical').map(f=>f.message), important: auditFlags.filter(f=>f.severity==='warning').map(f=>f.message), suggestion: auditFlags.filter(f=>f.severity==='info').map(f=>f.message) };
+    }
+
+    res.json({
+      success: true,
+      ehr: ehrData?.ehr_payload || null,
+      human_note: ehrData?.human_note || patientSummary || null,
+      patient_summary: patientSummary || null,
+      red_flags: auditFlags,
+      codes: ehrData?.ehr_payload ? {
+        icd10: ehrData.ehr_payload.icd10_codes || [],
+        cpt: ehrData.ehr_payload.cpt_codes_today || []
+      } : null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ═══════════════════ CONSULT PROMPTS ═══════════════════
 const CONSULT_PROMPTS = {
   'Initial Consultation': {
